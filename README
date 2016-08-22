@@ -189,7 +189,8 @@ append a hash-tree to system.img.
 
 By default, the algorithm SHA256_RSA4096 is used with a test key from
 this directory. This can be overriden by the BOARD_AVB_ALGORITHM and
-BOARD_AVB_KEY_PATH variables to use e.g. RSA-4096:
+BOARD_AVB_KEY_PATH variables to use e.g. a 4096-bit RSA key and
+SHA-512:
 
  BOARD_AVB_ALGORITHM := SHA512_RSA4096
  BOARD_AVB_KEY_PATH := /path/to/rsa_key_4096bits.pem
@@ -206,5 +207,17 @@ BOARD_AVB_ROLLBACK_INDEX variable:
 
 If this is not set, the rollback index defaults to 0.
 
-The variable BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS to specify additional
-options passed to 'avbtool make_vbmeta_image'.
+The variable BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS can be used to specify
+additional options passed to 'avbtool make_vbmeta_image'. Typical
+options to be used here include '--prop', '--prop_from_file', and
+'--chain_partition'.
+
+The variable BOARD_AVBTOOL_BOOT_ADD_HASH_FOOTER_ARGS can be used to
+specify additional options passed to 'avbtool add_hash_footer' for
+boot.img. Typical options to be used here include '--hash_algorithm'
+and '--salt'.
+
+The variable BOARD_AVBTOOL_SYSTEM_ADD_HASHTREE_FOOTER_ARGS can be used
+to specify additional options passed to 'avbtool add_hashtree_footer'
+for systems.img. Typical options to be used here include
+'--hash_algorithm', '--salt', and '--block_size'.

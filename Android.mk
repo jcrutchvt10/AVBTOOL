@@ -109,6 +109,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libavb_host_unittest
+LOCAL_REQUIRED_MODULES := simg2img img2simg
 LOCAL_MODULE_HOST_OS := linux
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CLANG := true
