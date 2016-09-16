@@ -417,8 +417,8 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
   ASSERT_EQ(
       "Footer version:           1.0\n"
       "Image size:               10485760 bytes\n"
-      "Original image size:      4415488 bytes\n"
-      "VBMeta offset:            4415488\n"
+      "Original image size:      4423680 bytes\n"
+      "VBMeta offset:            4423680\n"
       "VBMeta size:              1472 bytes\n"
       "--\n"
       "VBMeta image version:     1.0 (Sparse)\n"
@@ -429,12 +429,12 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
       "Rollback Index:           0\n"
       "Descriptors:\n"
       "    Hash descriptor:\n"
-      "      Image Size:            4415488 bytes\n"
+      "      Image Size:            4423680 bytes\n"
       "      Hash Algorithm:        sha256\n"
       "      Partition Name:        foobar\n"
       "      Salt:                  d00df00d\n"
       "      Digest:                "
-      "4cc8f283b40e8d13651ec6ca2d258ace88a61b6286f2a2e149204745f43b2285\n",
+      "3c08f3cc524fefcf19697fa5bd19b5b8e01cc0abbd687fedffd741b0142a9e59\n",
       InfoImage(partition_path));
 
   EXPECT_COMMAND(0, "mv %s %s.sparse", partition_path.value().c_str(),
