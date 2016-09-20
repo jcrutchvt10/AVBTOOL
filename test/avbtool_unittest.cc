@@ -262,9 +262,9 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   std::vector<uint8_t> rootfs;
   rootfs.resize(rootfs_size);
   for (size_t n = 0; n < rootfs_size; n++) {
-    if ((n >= 5*1000 && n < 105*1000) ||
-        (n >= 205*1000 && n < 305*1000) ||
-        (n >= 505*1000 && n < 605*1000)) {
+    if ((n >= 5 * 1000 && n < 105 * 1000) ||
+        (n >= 205 * 1000 && n < 305 * 1000) ||
+        (n >= 505 * 1000 && n < 605 * 1000)) {
       rootfs[n] = uint8_t(n) & 0x03;
     } else {
       rootfs[n] = uint8_t(n);
@@ -312,7 +312,9 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
                                  "      Hash Algorithm:        sha256\n"
                                  "      Partition Name:        foobar\n"
                                  "      Salt:                  d00df00d\n"
-                                 "      Digest:                9a58cc996d405e08a1e00f96dbfe9104fedf41cb83b1f5e4ed357fbcf58d88d9\n",
+                                 "      Digest:                "
+                                 "9a58cc996d405e08a1e00f96dbfe9104fedf41cb83b1f"
+                                 "5e4ed357fbcf58d88d9\n",
                                  sparse_image ? " (Sparse)" : ""),
               InfoImage(rootfs_path));
   }

@@ -60,7 +60,9 @@ LOCAL_CFLAGS := $(avb_common_cflags) -fno-stack-protector -DAVB_ENABLE_DEBUG -DA
 LOCAL_LDFLAGS := $(avb_common_ldflags)
 LOCAL_C_INCLUDES :=
 LOCAL_SRC_FILES := \
+    libavb/avb_ab_flow.c \
     libavb/avb_chain_partition_descriptor.c \
+    libavb/avb_crc32.c \
     libavb/avb_crypto.c \
     libavb/avb_descriptor.c \
     libavb/avb_footer.c \
@@ -87,7 +89,9 @@ LOCAL_CFLAGS := $(avb_common_cflags) -fno-stack-protector -DAVB_ENABLE_DEBUG -DA
 LOCAL_LDFLAGS := $(avb_common_ldflags)
 LOCAL_C_INCLUDES :=
 LOCAL_SRC_FILES := \
+    libavb/avb_ab_flow.c \
     libavb/avb_chain_partition_descriptor.c \
+    libavb/avb_crc32.c \
     libavb/avb_crypto.c \
     libavb/avb_descriptor.c \
     libavb/avb_footer.c \
@@ -133,12 +137,30 @@ LOCAL_STATIC_LIBRARIES := \
 LOCAL_SHARED_LIBRARIES := \
     libchrome
 LOCAL_SRC_FILES := \
+    test/avb_ab_flow_unittest.cc \
     test/avb_slot_verify_unittest.cc \
     test/avb_util_unittest.cc \
     test/avb_vbmeta_image_unittest.cc \
-    test/avbtool_unittest.cc
+    test/avbtool_unittest.cc \
+    test/fake_avb_ops.cc
 LOCAL_LDLIBS_linux := -lrt
 include $(BUILD_HOST_NATIVE_TEST)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := bootctrl.avb
+LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_REQUIRED_MODULES := libavb
+LOCAL_SRC_FILES := \
+    boot_control/boot_control_avb.c \
+    boot_control/avb_ops_device.c \
+    libavb/avb_sysdeps_posix.c
+LOCAL_CLANG := true
+LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_COMPILATION
+LOCAL_LDFLAGS := $(avb_common_ldflags)
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/libavb
+LOCAL_SHARED_LIBRARIES := libcutils
+LOCAL_STATIC_LIBRARIES := libfs_mgr
+include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES := libavb_host_symbols_test

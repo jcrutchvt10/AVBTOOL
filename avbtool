@@ -22,9 +22,10 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-"""Command-line tool for working with Brillo Verified Boot images."""
+"""Command-line tool for working with Android Verified Boot images."""
 
 import argparse
+import binascii
 import bisect
 import hashlib
 import os
@@ -1424,7 +1425,7 @@ class AvbFooter(object):
        self.original_image_size, self.vbmeta_offset,
        self.vbmeta_size) = struct.unpack(self.FORMAT_STRING, data)
       if self.magic != self.MAGIC:
-        raise LookupError('Given data does not look like a Brillo  footer.')
+        raise LookupError('Given data does not look like a AVB footer.')
     else:
       self.magic = self.MAGIC
       self.version_major = AVB_VERSION_MAJOR
@@ -1445,7 +1446,7 @@ class AvbFooter(object):
 
 
 class AvbVBMetaHeader(object):
-  """A class for parsing and writing Brillo Verified Boot vbmeta images.
+  """A class for parsing and writing AVB vbmeta images.
 
   Attributes:
     The attributes correspond to the |AvbVBMetaHeader| struct
@@ -1488,7 +1489,7 @@ class AvbVBMetaHeader(object):
        self.rollback_index) = struct.unpack(self.FORMAT_STRING, data)
       # Nuke NUL-bytes at the end of the string.
       if self.magic != 'AVB0':
-        raise AvbError('Given image does not look like a Brillo boot image')
+        raise AvbError('Given image does not look like a vbmeta image.')
     else:
       self.magic = 'AVB0'
       self.header_version_major = AVB_VERSION_MAJOR
@@ -1539,6 +1540,13 @@ class AvbVBMetaHeader(object):
 class Avb(object):
   """Business logic for avbtool command-line tool."""
 
+  # Keep in sync with avb_ab_flow.h.
+  AB_FORMAT_NO_CRC = '!4sBB2xBBBxBBBx12x'
+  AB_MAGIC = '\0AB0'
+  AB_MAJOR_VERSION = 1
+  AB_MINOR_VERSION = 0
+  AB_MISC_METADATA_OFFSET = 2048
+
   def erase_footer(self, image_filename, keep_hashtree):
     """Implements the 'erase_footer' command.
 
@@ -1575,6 +1583,40 @@ class Avb(object):
 
     # And cut...
     image.truncate(new_image_size)
+
+  def set_ab_metadata(self, misc_image, slot_data):
+    """Implements the 'set_ab_metadata' command.
+
+    The |slot_data| argument must be of the form 'A_priority:A_tries_remaining:
+    A_successful_boot:B_priority:B_tries_remaining:B_successful_boot'.
+
+    Arguments:
+      misc_image: The misc image to write to.
+      slot_data: Slot data as a string
+
+    Raises:
+      AvbError: If slot data is malformed.
+    """
+    tokens = slot_data.split(':')
+    if len(tokens) != 6:
+      raise AvbError('Malformed slot data "{}".'.format(slot_data))
+    a_priority = int(tokens[0])
+    a_tries_remaining = int(tokens[1])
+    a_success = True if int(tokens[2]) != 0 else False
+    b_priority = int(tokens[3])
+    b_tries_remaining = int(tokens[4])
+    b_success = True if int(tokens[5]) != 0 else False
+
+    ab_data_no_crc = struct.pack(self.AB_FORMAT_NO_CRC,
+                                 self.AB_MAGIC,
+                                 self.AB_MAJOR_VERSION, self.AB_MINOR_VERSION,
+                                 a_priority, a_tries_remaining, a_success,
+                                 b_priority, b_tries_remaining, b_success)
+    # Force CRC to be unsigned, see https://bugs.python.org/issue4903 for why.
+    crc_value = binascii.crc32(ab_data_no_crc) & 0xffffffff
+    ab_data = ab_data_no_crc + struct.pack('!I', crc_value)
+    misc_image.seek(self.AB_MISC_METADATA_OFFSET)
+    misc_image.write(ab_data)
 
   def info_image(self, image_filename, output):
     """Implements the 'info_image' command.
@@ -2410,7 +2452,7 @@ class AvbTool(object):
     sub_parser = subparsers.add_parser('add_hash_footer',
                                        help='Add hashes and footer to image.')
     sub_parser.add_argument('--image',
-                            help='Brillo boot image to add hashes to',
+                            help='Image to add hashes to',
                             type=argparse.FileType('rab+'))
     sub_parser.add_argument('--partition_size',
                             help='Partition size',
@@ -2430,7 +2472,7 @@ class AvbTool(object):
     sub_parser = subparsers.add_parser('add_hashtree_footer',
                                        help='Add hashtree and footer to image.')
     sub_parser.add_argument('--image',
-                            help='Brillo boot image to add hashes to',
+                            help='Image to add hashtree to',
                             type=argparse.FileType('rab+'))
     sub_parser.add_argument('--partition_size',
                             help='Partition size',
@@ -2454,7 +2496,7 @@ class AvbTool(object):
     sub_parser = subparsers.add_parser('erase_footer',
                                        help='Erase footer from an image.')
     sub_parser.add_argument('--image',
-                            help='Brillo image with a footer',
+                            help='Image with a footer',
                             type=argparse.FileType('rwb+'),
                             required=True)
     sub_parser.add_argument('--keep_hashtree',
@@ -2466,7 +2508,7 @@ class AvbTool(object):
         'info_image',
         help='Show information about vbmeta or footer.')
     sub_parser.add_argument('--image',
-                            help='Brillo boot image to use',
+                            help='Image to show information about',
                             type=argparse.FileType('rb'),
                             required=True)
     sub_parser.add_argument('--output',
@@ -2474,6 +2516,22 @@ class AvbTool(object):
                             type=argparse.FileType('wt'),
                             default=sys.stdout)
     sub_parser.set_defaults(func=self.info_image)
+
+    sub_parser = subparsers.add_parser('set_ab_metadata',
+                                       help='Set A/B metadata.')
+    sub_parser.add_argument('--misc_image',
+                            help=('The misc image to modify. If the image does '
+                                  'not exist, it will be created.'),
+                            type=argparse.FileType('r+b'),
+                            required=True)
+    sub_parser.add_argument('--slot_data',
+                            help=('Slot data of the form "priority", '
+                                  '"tries_remaining", "sucessful_boot" for '
+                                  'slot A followed by the same for slot B, '
+                                  'separated by colons. The default value '
+                                  'is 15:7:0:14:7:0.'),
+                            default='15:7:0:14:7:0')
+    sub_parser.set_defaults(func=self.set_ab_metadata)
 
     args = parser.parse_args(argv[1:])
     try:
@@ -2522,6 +2580,10 @@ class AvbTool(object):
   def erase_footer(self, args):
     """Implements the 'erase_footer' sub-command."""
     self.avb.erase_footer(args.image.name, args.keep_hashtree)
+
+  def set_ab_metadata(self, args):
+    """Implements the 'set_ab_metadata' sub-command."""
+    self.avb.set_ab_metadata(args.misc_image, args.slot_data)
 
   def info_image(self, args):
     """Implements the 'info_image' sub-command."""

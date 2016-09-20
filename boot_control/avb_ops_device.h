@@ -22,29 +22,19 @@
  * SOFTWARE.
  */
 
-#ifndef LIBAVB_H_
-#define LIBAVB_H_
+#ifndef AVB_OPS_DEVICE_H_
+#define AVB_OPS_DEVICE_H_
 
-/* The AVB_INSIDE_LIBAVB_H preprocessor symbol is used to enforce
- * library users to include only this file. All public interfaces, and
- * only public interfaces, must be included here.
+#include <libavb.h>
+
+/* Allocates an AvbOps instance suitable for use on the
+ * device. Returns NULL on OOM.
+ *
+ * Free with avb_ops_device_free().
  */
+AvbOps* avb_ops_device_new(void);
 
-#define AVB_INSIDE_LIBAVB_H
-#include "avb_ab_flow.h"
-#include "avb_chain_partition_descriptor.h"
-#include "avb_crypto.h"
-#include "avb_descriptor.h"
-#include "avb_footer.h"
-#include "avb_hash_descriptor.h"
-#include "avb_hashtree_descriptor.h"
-#include "avb_kernel_cmdline_descriptor.h"
-#include "avb_ops.h"
-#include "avb_property_descriptor.h"
-#include "avb_slot_verify.h"
-#include "avb_sysdeps.h"
-#include "avb_util.h"
-#include "avb_vbmeta_image.h"
-#undef AVB_INSIDE_LIBAVB_H
+/* Frees an AvbOps instance previously allocated with avb_ops_device_new(). */
+void avb_ops_device_free(AvbOps* ops);
 
-#endif /* LIBAVB_H_ */
+#endif /* AVB_OPS_DEVICE_H_ */

@@ -128,6 +128,12 @@ uint32_t avb_be32toh(uint32_t in) AVB_ATTR_WARN_UNUSED_RESULT;
 /* Converts a 64-bit unsigned integer from big-endian to host byte order. */
 uint64_t avb_be64toh(uint64_t in) AVB_ATTR_WARN_UNUSED_RESULT;
 
+/* Converts a 32-bit unsigned integer from host to big-endian byte order. */
+uint32_t avb_htobe32(uint32_t in) AVB_ATTR_WARN_UNUSED_RESULT;
+
+/* Converts a 64-bit unsigned integer from host to big-endian byte order. */
+uint64_t avb_htobe64(uint64_t in) AVB_ATTR_WARN_UNUSED_RESULT;
+
 /* Compare |n| bytes starting at |s1| with |s2| and return 0 if they
  * match, 1 if they don't.  Returns 0 if |n|==0, since no bytes
  * mismatched.
@@ -204,6 +210,9 @@ const char* avb_strstr(const char* haystack,
  */
 char* avb_replace(const char* str, const char* search,
                   const char* replace) AVB_ATTR_WARN_UNUSED_RESULT;
+
+/* Calculates the CRC-32 for data in |buf| of size |buf_size|. */
+uint32_t avb_crc32(const uint8_t* buf, size_t buf_size);
 
 #ifdef __cplusplus
 }
