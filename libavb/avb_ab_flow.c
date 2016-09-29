@@ -81,17 +81,20 @@ void avb_ab_data_init(AvbABData* data) {
  */
 #define AB_METADATA_MISC_PARTITION_OFFSET 2048
 
-bool avb_ab_data_read(AvbOps* ops, AvbABData* data) {
+AvbIOResult avb_ab_data_read(AvbOps* ops, AvbABData* data) {
   AvbABData serialized;
-  AvbIOResult io_result;
+  AvbIOResult io_ret;
   size_t num_bytes_read;
 
-  io_result =
+  io_ret =
       ops->read_from_partition(ops, "misc", AB_METADATA_MISC_PARTITION_OFFSET,
                                sizeof(AvbABData), &serialized, &num_bytes_read);
-  if (io_result != AVB_IO_RESULT_OK || num_bytes_read != sizeof(AvbABData)) {
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    return AVB_IO_RESULT_ERROR_OOM;
+  } else if (io_ret != AVB_IO_RESULT_OK ||
+             num_bytes_read != sizeof(AvbABData)) {
     avb_error("Error reading A/B metadata.\n");
-    return false;
+    return AVB_IO_RESULT_ERROR_IO;
   }
 
   if (!avb_ab_data_verify_and_byteswap(&serialized, data)) {
@@ -102,22 +105,24 @@ bool avb_ab_data_read(AvbOps* ops, AvbABData* data) {
     return avb_ab_data_write(ops, data);
   }
 
-  return true;
+  return AVB_IO_RESULT_OK;
 }
 
-bool avb_ab_data_write(AvbOps* ops, const AvbABData* data) {
+AvbIOResult avb_ab_data_write(AvbOps* ops, const AvbABData* data) {
   AvbABData serialized;
-  AvbIOResult io_result;
+  AvbIOResult io_ret;
 
   avb_ab_data_update_crc_and_byteswap(data, &serialized);
-  io_result =
+  io_ret =
       ops->write_to_partition(ops, "misc", AB_METADATA_MISC_PARTITION_OFFSET,
                               sizeof(AvbABData), &serialized);
-  if (io_result != AVB_IO_RESULT_OK) {
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    return AVB_IO_RESULT_ERROR_OOM;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
     avb_error("Error writing A/B metadata.\n");
-    return false;
+    return AVB_IO_RESULT_ERROR_IO;
   }
-  return true;
+  return AVB_IO_RESULT_OK;
 }
 
 static bool slot_is_bootable(AvbABSlotData* slot) {
@@ -154,12 +159,17 @@ static void slot_normalize(AvbABSlotData* slot) {
 
 static const char* slot_suffixes[2] = {"_a", "_b"};
 
-/* Helper function to metadata - returns false if an I/O error occurs. */
-static bool load_metadata(AvbOps* ops, AvbABData* ab_data,
-                          AvbABData* ab_data_orig) {
-  if (!avb_ab_data_read(ops, ab_data)) {
+/* Helper function to load metadata - returns AVB_IO_RESULT_OK on
+ * success, error code otherwise.
+ */
+static AvbIOResult load_metadata(AvbOps* ops, AvbABData* ab_data,
+                                 AvbABData* ab_data_orig) {
+  AvbIOResult io_ret;
+
+  io_ret = avb_ab_data_read(ops, ab_data);
+  if (io_ret != AVB_IO_RESULT_OK) {
     avb_error("I/O error while loading A/B metadata.\n");
-    return false;
+    return io_ret;
   }
   *ab_data_orig = *ab_data;
 
@@ -169,22 +179,19 @@ static bool load_metadata(AvbOps* ops, AvbABData* ab_data,
    */
   slot_normalize(&ab_data->slots[0]);
   slot_normalize(&ab_data->slots[1]);
-  return true;
+  return AVB_IO_RESULT_OK;
 }
 
-/* Writes A/B metadata to disk only if it has changed - returns false
- * if an I/O error occurs.
+/* Writes A/B metadata to disk only if it has changed - returns
+ * AVB_IO_RESULT_OK on success, error code otherwise.
  */
-static bool save_metadata_if_changed(AvbOps* ops, AvbABData* ab_data,
-                                     AvbABData* ab_data_orig) {
+static AvbIOResult save_metadata_if_changed(AvbOps* ops, AvbABData* ab_data,
+                                            AvbABData* ab_data_orig) {
   if (avb_safe_memcmp(ab_data, ab_data_orig, sizeof(AvbABData)) != 0) {
     avb_debug("Writing A/B metadata to disk.\n");
-    if (!avb_ab_data_write(ops, ab_data)) {
-      avb_error("Error writing A/B metadata to disk.\n");
-      return false;
-    }
+    return avb_ab_data_write(ops, ab_data);
   }
-  return true;
+  return AVB_IO_RESULT_OK;
 }
 
 AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data) {
@@ -193,8 +200,13 @@ AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data) {
   AvbABFlowResult ret;
   AvbABData ab_data, ab_data_orig;
   size_t slot_index_to_boot, n;
+  AvbIOResult io_ret;
 
-  if (!load_metadata(ops, &ab_data, &ab_data_orig)) {
+  io_ret = load_metadata(ops, &ab_data, &ab_data_orig);
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
+    goto out;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
     ret = AVB_AB_FLOW_RESULT_ERROR_IO;
     goto out;
   }
@@ -205,11 +217,11 @@ AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data) {
       AvbSlotVerifyResult verify_result;
       verify_result = avb_slot_verify(ops, slot_suffixes[n], &slot_data[n]);
       if (verify_result != AVB_SLOT_VERIFY_RESULT_OK) {
-        if (verify_result == AVB_AB_FLOW_RESULT_ERROR_OOM) {
+        if (verify_result == AVB_SLOT_VERIFY_RESULT_ERROR_OOM) {
           ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
           goto out;
         }
-        if (verify_result == AVB_AB_FLOW_RESULT_ERROR_IO) {
+        if (verify_result == AVB_SLOT_VERIFY_RESULT_ERROR_IO) {
           ret = AVB_AB_FLOW_RESULT_ERROR_IO;
           goto out;
         }
@@ -260,13 +272,21 @@ AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data) {
 
     if (rollback_index_value != 0) {
       uint64_t current_rollback_index_value;
-      if (!ops->read_rollback_index(ops, n, &current_rollback_index_value)) {
+      io_ret = ops->read_rollback_index(ops, n, &current_rollback_index_value);
+      if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+        ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
+        goto out;
+      } else if (io_ret != AVB_IO_RESULT_OK) {
         avb_error("Error getting rollback index for slot.\n");
         ret = AVB_AB_FLOW_RESULT_ERROR_IO;
         goto out;
       }
       if (current_rollback_index_value != rollback_index_value) {
-        if (!ops->write_rollback_index(ops, n, rollback_index_value)) {
+        io_ret = ops->write_rollback_index(ops, n, rollback_index_value);
+        if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+          ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
+          goto out;
+        } else if (io_ret != AVB_IO_RESULT_OK) {
           avb_error("Error setting stored rollback index.\n");
           ret = AVB_AB_FLOW_RESULT_ERROR_IO;
           goto out;
@@ -288,8 +308,13 @@ AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data) {
   }
 
 out:
-  if (!save_metadata_if_changed(ops, &ab_data, &ab_data_orig)) {
-    ret = AVB_AB_FLOW_RESULT_ERROR_IO;
+  io_ret = save_metadata_if_changed(ops, &ab_data, &ab_data_orig);
+  if (io_ret != AVB_IO_RESULT_OK) {
+    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+      ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
+    } else {
+      ret = AVB_AB_FLOW_RESULT_ERROR_IO;
+    }
     if (data != NULL) {
       avb_slot_verify_data_free(data);
       data = NULL;
@@ -313,14 +338,15 @@ out:
   return ret;
 }
 
-bool avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number) {
+AvbIOResult avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number) {
   AvbABData ab_data, ab_data_orig;
-  bool ret = false;
   unsigned int other_slot_number;
+  AvbIOResult ret;
 
   avb_assert(slot_number < 2);
 
-  if (!load_metadata(ops, &ab_data, &ab_data_orig)) {
+  ret = load_metadata(ops, &ab_data, &ab_data_orig);
+  if (ret != AVB_IO_RESULT_OK) {
     goto out;
   }
 
@@ -335,58 +361,62 @@ bool avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number) {
     ab_data.slots[other_slot_number].priority = AVB_AB_MAX_PRIORITY - 1;
   }
 
-  ret = true;
+  ret = AVB_IO_RESULT_OK;
 
 out:
-  if (!save_metadata_if_changed(ops, &ab_data, &ab_data_orig)) {
-    ret = false;
+  if (ret == AVB_IO_RESULT_OK) {
+    ret = save_metadata_if_changed(ops, &ab_data, &ab_data_orig);
   }
   return ret;
 }
 
-bool avb_ab_mark_slot_unbootable(AvbOps* ops, unsigned int slot_number) {
+AvbIOResult avb_ab_mark_slot_unbootable(AvbOps* ops, unsigned int slot_number) {
   AvbABData ab_data, ab_data_orig;
-  bool ret = false;
+  AvbIOResult ret;
 
   avb_assert(slot_number < 2);
 
-  if (!load_metadata(ops, &ab_data, &ab_data_orig)) {
+  ret = load_metadata(ops, &ab_data, &ab_data_orig);
+  if (ret != AVB_IO_RESULT_OK) {
     goto out;
   }
 
   slot_set_unbootable(&ab_data.slots[slot_number]);
-  ret = true;
+
+  ret = AVB_IO_RESULT_OK;
 
 out:
-  if (!save_metadata_if_changed(ops, &ab_data, &ab_data_orig)) {
-    ret = false;
+  if (ret == AVB_IO_RESULT_OK) {
+    ret = save_metadata_if_changed(ops, &ab_data, &ab_data_orig);
   }
   return ret;
 }
 
-bool avb_ab_mark_slot_successful(AvbOps* ops, unsigned int slot_number) {
+AvbIOResult avb_ab_mark_slot_successful(AvbOps* ops, unsigned int slot_number) {
   AvbABData ab_data, ab_data_orig;
-  bool ret = false;
+  AvbIOResult ret;
 
   avb_assert(slot_number < 2);
 
-  if (!load_metadata(ops, &ab_data, &ab_data_orig)) {
+  ret = load_metadata(ops, &ab_data, &ab_data_orig);
+  if (ret != AVB_IO_RESULT_OK) {
     goto out;
   }
 
   if (!slot_is_bootable(&ab_data.slots[slot_number])) {
     avb_error("Cannot mark unbootable slot as successful.\n");
+    ret = AVB_IO_RESULT_OK;
     goto out;
   }
 
   ab_data.slots[slot_number].tries_remaining = 0;
   ab_data.slots[slot_number].successful_boot = 1;
 
-  ret = true;
+  ret = AVB_IO_RESULT_OK;
 
 out:
-  if (!save_metadata_if_changed(ops, &ab_data, &ab_data_orig)) {
-    ret = false;
+  if (ret == AVB_IO_RESULT_OK) {
+    ret = save_metadata_if_changed(ops, &ab_data, &ab_data_orig);
   }
   return ret;
 }
