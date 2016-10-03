@@ -106,6 +106,22 @@ static int module_isSlotBootable(struct boot_control_module* module,
   return is_bootable ? 1 : 0;
 }
 
+static int module_isSlotMarkedSuccessful(struct boot_control_module* module,
+                                         unsigned int slot) {
+  AvbABData ab_data;
+  bool is_marked_successful;
+
+  avb_assert(slot < 2);
+
+  if (avb_ab_data_read(ops, &ab_data) != AVB_IO_RESULT_OK) {
+    return -EIO;
+  }
+
+  is_marked_successful = ab_data.slots[slot].successful_boot;
+
+  return is_marked_successful ? 1 : 0;
+}
+
 static const char* module_getSuffix(boot_control_module_t* module,
                                     unsigned int slot) {
   static const char* suffix[2] = {"_a", "_b"};
@@ -136,4 +152,5 @@ boot_control_module_t HAL_MODULE_INFO_SYM = {
     .setSlotAsUnbootable = module_setSlotAsUnbootable,
     .isSlotBootable = module_isSlotBootable,
     .getSuffix = module_getSuffix,
+    .isSlotMarkedSuccessful = module_isSlotMarkedSuccessful,
 };
