@@ -59,7 +59,8 @@ TEST_F(AvbSlotVerifyTest, Basic) {
   EXPECT_EQ(
       "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1408 "
-      "androidboot.vbmeta.digest=22cda7342f5ba915f41662975f96f081",
+      "androidboot.vbmeta.digest="
+      "22cda7342f5ba915f41662975f96f0810ba097399d9d4d4d3847f59c1fe8dfc9",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
 }
@@ -79,7 +80,8 @@ TEST_F(AvbSlotVerifyTest, BasicSha512) {
       "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha512 androidboot.vbmeta.size=1472 "
       "androidboot.vbmeta.digest="
-      "125592a19a266efe6683de1afee53e2585ccfcf33adb5d6485e6fbfeabccf571",
+      "125592a19a266efe6683de1afee53e2585ccfcf33adb5d6485e6fbfeabccf57134aa8365"
+      "aa949a5c6b253bf34956b80e304b7668ee599d207047c8d1bf9574d9",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
 }
@@ -100,7 +102,8 @@ TEST_F(AvbSlotVerifyTest, BasicUnlocked) {
   EXPECT_EQ(
       "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=unlocked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1408 "
-      "androidboot.vbmeta.digest=22cda7342f5ba915f41662975f96f081",
+      "androidboot.vbmeta.digest="
+      "22cda7342f5ba915f41662975f96f0810ba097399d9d4d4d3847f59c1fe8dfc9",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
 }
@@ -259,7 +262,8 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
       "androidboot.slot_suffix=_a "
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1600 "
-      "androidboot.vbmeta.digest=844308149e43d5db7b14cd5747def40a",
+      "androidboot.vbmeta.digest="
+      "844308149e43d5db7b14cd5747def40aadf2f0e4716d6435242f90aac9d883d6",
       std::string(slot_data->cmdline));
   EXPECT_EQ(4UL, slot_data->rollback_indexes[0]);
   for (size_t n = 1; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS; n++) {
@@ -383,7 +387,8 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       "androidboot.slot_suffix=_a "
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=2496 "
-      "androidboot.vbmeta.digest=3924a4e4cdf9a4e6e77b0d87e6e9b464",
+      "androidboot.vbmeta.digest="
+      "3924a4e4cdf9a4e6e77b0d87e6e9b4648621e43c2a20988a86c1eb9a56bef338",
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
@@ -602,7 +607,8 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
       "cmdline2 in hash footer cmdline2 in vbmeta "
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=2496 "
-      "androidboot.vbmeta.digest=3924a4e4cdf9a4e6e77b0d87e6e9b464",
+      "androidboot.vbmeta.digest="
+      "3924a4e4cdf9a4e6e77b0d87e6e9b4648621e43c2a20988a86c1eb9a56bef338",
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
