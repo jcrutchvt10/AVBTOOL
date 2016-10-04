@@ -118,20 +118,20 @@ void avb_ab_data_update_crc_and_byteswap(const AvbABData* src, AvbABData* dest);
 void avb_ab_data_init(AvbABData* data);
 
 /* Reads A/B metadata from the 'misc' partition using |ops|. Returned
- * data is properly byteswapped. Returns false if an I/O operation
- * failed.
+ * data is properly byteswapped. Returns AVB_IO_RESULT_OK on
+ * success, error code otherwise.
  *
  * If the data read from disk is invalid (e.g. wrong magic or CRC
  * checksum failure), the metadata will be reset using
  * avb_ab_data_init() and then written to disk.
  */
-bool avb_ab_data_read(AvbOps* ops, AvbABData* data);
+AvbIOResult avb_ab_data_read(AvbOps* ops, AvbABData* data);
 
 /* Writes A/B metadata to the 'misc' partition using |ops|. This will
- * byteswap and update the CRC as needed. Returns false if an I/O
- * error occurs, true otherwise.
+ * byteswap and update the CRC as needed. Returns AVB_IO_RESULT_OK on
+ * success, error code otherwise.
  */
-bool avb_ab_data_write(AvbOps* ops, const AvbABData* data);
+AvbIOResult avb_ab_data_write(AvbOps* ops, const AvbABData* data);
 
 /* Return codes used in avb_ab_flow(), see that function for
  * documentation of each value.
@@ -182,31 +182,34 @@ typedef enum {
  */
 AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data);
 
-/* Marks the slot with the given slot number as active. Returns false
- * if the operation fails.
+/* Marks the slot with the given slot number as active. Returns
+ * AVB_IO_RESULT_OK on success, error code otherwise.
  *
  * This function is typically used by the OS updater when completing
  * an update. It can also used by the firmware for implementing the
  * "set_active" command.
  */
-bool avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number);
+AvbIOResult avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number);
 
 /* Marks the slot with the given slot number as unbootable. Returns
- * false if the operation fails.
+ * AVB_IO_RESULT_OK on success, error code otherwise.
  *
  * This function is typically used by the OS updater before writing to
  * a slot.
  */
-bool avb_ab_mark_slot_unbootable(AvbOps* ops, unsigned int slot_number);
+AvbIOResult avb_ab_mark_slot_unbootable(AvbOps* ops, unsigned int slot_number);
 
 /* Marks the slot with the given slot number as having booted
- * successfully. This has no effect is the slot is not
- * bootable. Returns false if the operation fails.
+ * successfully. Returns AVB_IO_RESULT_OK on success, error code
+ * otherwise.
+ *
+ * Calling this on an unbootable slot is an error - AVB_IO_RESULT_OK
+ * will be returned yet the function will have no side-effects.
  *
  * This function is typically used by the OS updater after having
  * confirmed that the slot works as intended.
  */
-bool avb_ab_mark_slot_successful(AvbOps* ops, unsigned int slot_number);
+AvbIOResult avb_ab_mark_slot_successful(AvbOps* ops, unsigned int slot_number);
 
 #ifdef __cplusplus
 }

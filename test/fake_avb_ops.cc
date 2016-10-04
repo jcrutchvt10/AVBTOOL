@@ -127,52 +127,56 @@ AvbIOResult FakeAvbOps::write_to_partition(const char* partition,
   return AVB_IO_RESULT_OK;
 }
 
-int FakeAvbOps::validate_vbmeta_public_key(AvbOps* ops,
-                                           const uint8_t* public_key_data,
-                                           size_t public_key_length) {
-  if (public_key_length != expected_public_key_.size()) return 0;
-
-  return memcmp(expected_public_key_.c_str(), public_key_data,
-                public_key_length) == 0;
+AvbIOResult FakeAvbOps::validate_vbmeta_public_key(
+    AvbOps* ops, const uint8_t* public_key_data, size_t public_key_length,
+    bool* out_key_is_trusted) {
+  if (out_key_is_trusted != NULL) {
+    *out_key_is_trusted = (public_key_length == expected_public_key_.size() &&
+                           (memcmp(expected_public_key_.c_str(),
+                                   public_key_data, public_key_length) == 0));
+  }
+  return AVB_IO_RESULT_OK;
 }
 
-bool FakeAvbOps::read_rollback_index(AvbOps* ops, size_t rollback_index_slot,
-                                     uint64_t* out_rollback_index) {
+AvbIOResult FakeAvbOps::read_rollback_index(AvbOps* ops,
+                                            size_t rollback_index_slot,
+                                            uint64_t* out_rollback_index) {
   if (rollback_index_slot >= stored_rollback_indexes_.size()) {
     fprintf(stderr, "No rollback index for slot %zd (has %zd slots).\n",
             rollback_index_slot, stored_rollback_indexes_.size());
-    return false;
+    return AVB_IO_RESULT_ERROR_IO;
   }
   *out_rollback_index = stored_rollback_indexes_[rollback_index_slot];
-  return true;
+  return AVB_IO_RESULT_OK;
 }
 
-bool FakeAvbOps::write_rollback_index(AvbOps* ops, size_t rollback_index_slot,
-                                      uint64_t rollback_index) {
+AvbIOResult FakeAvbOps::write_rollback_index(AvbOps* ops,
+                                             size_t rollback_index_slot,
+                                             uint64_t rollback_index) {
   if (rollback_index_slot >= stored_rollback_indexes_.size()) {
     fprintf(stderr, "No rollback index for slot %zd (has %zd slots).\n",
             rollback_index_slot, stored_rollback_indexes_.size());
-    return false;
+    return AVB_IO_RESULT_ERROR_IO;
   }
   stored_rollback_indexes_[rollback_index_slot] = rollback_index;
-  return true;
+  return AVB_IO_RESULT_OK;
 }
 
-bool FakeAvbOps::read_is_device_unlocked(AvbOps* ops,
-                                         bool* out_is_device_unlocked) {
+AvbIOResult FakeAvbOps::read_is_device_unlocked(AvbOps* ops,
+                                                bool* out_is_device_unlocked) {
   *out_is_device_unlocked = stored_is_device_unlocked_ ? 1 : 0;
-  return true;
+  return AVB_IO_RESULT_OK;
 }
 
-bool FakeAvbOps::get_unique_guid_for_partition(AvbOps* ops,
-                                               const char* partition,
-                                               char* guid_buf,
-                                               size_t guid_buf_size) {
+AvbIOResult FakeAvbOps::get_unique_guid_for_partition(AvbOps* ops,
+                                                      const char* partition,
+                                                      char* guid_buf,
+                                                      size_t guid_buf_size) {
   // This is faking it a bit but makes testing easy. It works
   // because avb_slot_verify.c doesn't check that the returned GUID
   // is wellformed.
   snprintf(guid_buf, guid_buf_size, "1234-fake-guid-for:%s", partition);
-  return true;
+  return AVB_IO_RESULT_OK;
 }
 
 struct FakeAvbOpsC {
@@ -197,37 +201,39 @@ static AvbIOResult my_ops_write_to_partition(AvbOps* ops, const char* partition,
       ->my_ops->write_to_partition(partition, offset, num_bytes, buffer);
 }
 
-static bool my_ops_validate_vbmeta_public_key(AvbOps* ops,
-                                              const uint8_t* public_key_data,
-                                              size_t public_key_length) {
+static AvbIOResult my_ops_validate_vbmeta_public_key(
+    AvbOps* ops, const uint8_t* public_key_data, size_t public_key_length,
+    bool* out_key_is_trusted) {
   return ((FakeAvbOpsC*)ops)
-      ->my_ops->validate_vbmeta_public_key(ops, public_key_data,
-                                           public_key_length);
+      ->my_ops->validate_vbmeta_public_key(
+          ops, public_key_data, public_key_length, out_key_is_trusted);
 }
 
-static bool my_ops_read_rollback_index(AvbOps* ops, size_t rollback_index_slot,
-                                       uint64_t* out_rollback_index) {
+static AvbIOResult my_ops_read_rollback_index(AvbOps* ops,
+                                              size_t rollback_index_slot,
+                                              uint64_t* out_rollback_index) {
   return ((FakeAvbOpsC*)ops)
       ->my_ops->read_rollback_index(ops, rollback_index_slot,
                                     out_rollback_index);
 }
 
-static bool my_ops_write_rollback_index(AvbOps* ops, size_t rollback_index_slot,
-                                        uint64_t rollback_index) {
+static AvbIOResult my_ops_write_rollback_index(AvbOps* ops,
+                                               size_t rollback_index_slot,
+                                               uint64_t rollback_index) {
   return ((FakeAvbOpsC*)ops)
       ->my_ops->write_rollback_index(ops, rollback_index_slot, rollback_index);
 }
 
-static bool my_ops_read_is_device_unlocked(AvbOps* ops,
-                                           bool* out_is_device_unlocked) {
+static AvbIOResult my_ops_read_is_device_unlocked(
+    AvbOps* ops, bool* out_is_device_unlocked) {
   return ((FakeAvbOpsC*)ops)
       ->my_ops->read_is_device_unlocked(ops, out_is_device_unlocked);
 }
 
-static bool my_ops_get_unique_guid_for_partition(AvbOps* ops,
-                                                 const char* partition,
-                                                 char* guid_buf,
-                                                 size_t guid_buf_size) {
+static AvbIOResult my_ops_get_unique_guid_for_partition(AvbOps* ops,
+                                                        const char* partition,
+                                                        char* guid_buf,
+                                                        size_t guid_buf_size) {
   return ((FakeAvbOpsC*)ops)
       ->my_ops->get_unique_guid_for_partition(ops, partition, guid_buf,
                                               guid_buf_size);
