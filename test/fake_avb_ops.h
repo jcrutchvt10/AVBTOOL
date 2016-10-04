@@ -69,19 +69,23 @@ class FakeAvbOps {
   AvbIOResult write_to_partition(const char* partition, int64_t offset,
                                  size_t num_bytes, const void* buffer);
 
-  int validate_vbmeta_public_key(AvbOps* ops, const uint8_t* public_key_data,
-                                 size_t public_key_length);
+  AvbIOResult validate_vbmeta_public_key(AvbOps* ops,
+                                         const uint8_t* public_key_data,
+                                         size_t public_key_length,
+                                         bool* out_key_is_trusted);
 
-  bool read_rollback_index(AvbOps* ops, size_t rollback_index_slot,
-                           uint64_t* out_rollback_index);
+  AvbIOResult read_rollback_index(AvbOps* ops, size_t rollback_index_slot,
+                                  uint64_t* out_rollback_index);
 
-  bool write_rollback_index(AvbOps* ops, size_t rollback_index_slot,
-                            uint64_t rollback_index);
+  AvbIOResult write_rollback_index(AvbOps* ops, size_t rollback_index_slot,
+                                   uint64_t rollback_index);
 
-  bool read_is_device_unlocked(AvbOps* ops, bool* out_is_device_unlocked);
+  AvbIOResult read_is_device_unlocked(AvbOps* ops,
+                                      bool* out_is_device_unlocked);
 
-  bool get_unique_guid_for_partition(AvbOps* ops, const char* partition,
-                                     char* guid_buf, size_t guid_buf_size);
+  AvbIOResult get_unique_guid_for_partition(AvbOps* ops, const char* partition,
+                                            char* guid_buf,
+                                            size_t guid_buf_size);
 
  private:
   FakeAvbOpsC* avb_ops_;
