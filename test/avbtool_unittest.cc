@@ -404,6 +404,7 @@ TEST_F(AvbToolTest, AddHashFooterSparse) { AddHashFooterTest(true); }
 
 TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
   const size_t partition_size = 10 * 1024 * 1024;
+  const size_t metadata_size = 128 * 1024;
 
   // It's not enough to run img2simg on a file with a lot of zeroes at
   // the end since that will turn up as "Fill with value (for value =
@@ -411,7 +412,8 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
   // this since it will put a big hole (e.g. "Don't care" chunk) at
   // the end.
   base::FilePath partition_path = testdir_.Append("partition.bin");
-  EXPECT_COMMAND(0, "make_ext4fs -s -L test -l %zd %s", partition_size,
+  EXPECT_COMMAND(0, "make_ext4fs -s -L test -l %zd %s",
+                 partition_size - metadata_size,
                  partition_path.value().c_str());
 
   EXPECT_COMMAND(0,
@@ -427,8 +429,8 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
   ASSERT_EQ(
       "Footer version:           1.0\n"
       "Image size:               10485760 bytes\n"
-      "Original image size:      4423680 bytes\n"
-      "VBMeta offset:            4423680\n"
+      "Original image size:      10354688 bytes\n"
+      "VBMeta offset:            10354688\n"
       "VBMeta size:              1472 bytes\n"
       "--\n"
       "VBMeta image version:     1.0 (Sparse)\n"
@@ -439,12 +441,12 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
       "Rollback Index:           0\n"
       "Descriptors:\n"
       "    Hash descriptor:\n"
-      "      Image Size:            4423680 bytes\n"
+      "      Image Size:            10354688 bytes\n"
       "      Hash Algorithm:        sha256\n"
       "      Partition Name:        foobar\n"
       "      Salt:                  d00df00d\n"
       "      Digest:                "
-      "3c08f3cc524fefcf19697fa5bd19b5b8e01cc0abbd687fedffd741b0142a9e59\n",
+      "f086a7b8f6c4e9b8c7607423f81cb4be7aca9865f65b37fb8d2ee544eb27e141\n",
       InfoImage(partition_path));
 
   EXPECT_COMMAND(0, "mv %s %s.sparse", partition_path.value().c_str(),
@@ -637,6 +639,36 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
 TEST_F(AvbToolTest, AddHashtreeFooter) { AddHashtreeFooterTest(false); }
 
 TEST_F(AvbToolTest, AddHashtreeFooterSparse) { AddHashtreeFooterTest(true); }
+
+TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSize) {
+  const size_t partition_size = 10 * 1024 * 1024;
+  base::FilePath output_path = testdir_.Append("max_size.txt");
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer "
+                 "--partition_size %zd --calc_max_image_size > %s",
+                 partition_size, output_path.value().c_str());
+  std::string max_image_size_data;
+  EXPECT_TRUE(base::ReadFileToString(output_path, &max_image_size_data));
+  EXPECT_EQ("10330112\n", max_image_size_data);
+  size_t max_image_size = atoll(max_image_size_data.c_str());
+
+  // Hashtree and metadata takes up 152 KiB.
+  EXPECT_EQ(152 * 1024ULL, partition_size - max_image_size);
+
+  // Check that we can add a hashtree with an image this size for such
+  // a partition size.
+  base::FilePath system_path = GenerateImage("system", max_image_size);
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer"
+                 " --image %s"
+                 " --partition_name system"
+                 " --partition_size %zd"
+                 " --salt deadbeef"
+                 " --algorithm SHA512_RSA4096 "
+                 " --key test/data/testkey_rsa4096.pem",
+                 system_path.value().c_str(), partition_size);
+}
 
 TEST_F(AvbToolTest, KernelCmdlineDescriptor) {
   base::FilePath vbmeta_path =
