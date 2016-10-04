@@ -40,21 +40,24 @@ extern "C" {
  * AVB_IO_RESULT_OK is returned if the requested operation was
  * successful.
  *
+ * AVB_IO_RESULT_ERROR_IO is returned if the underlying hardware (disk
+ * or other subsystem) encountered an I/O error.
+ *
+ * AVB_IO_RESULT_ERROR_OOM is returned if unable to allocate memory.
+ *
  * AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION is returned if the requested
  * partition does not exist.
  *
  * AVB_IO_RESULT_ERROR_RANGE_OUTSIDE_PARTITION is returned if the
  * range of bytes requested to be read or written is outside the range
  * of the partition.
- *
- * AVB_IO_RESULT_ERROR_IO is returned if the underlying disk
- * encountered an I/O error.
  */
 typedef enum {
   AVB_IO_RESULT_OK,
-  AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION,
-  AVB_IO_RESULT_ERROR_RANGE_OUTSIDE_PARTITION,
+  AVB_IO_RESULT_ERROR_OOM,
   AVB_IO_RESULT_ERROR_IO,
+  AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION,
+  AVB_IO_RESULT_ERROR_RANGE_OUTSIDE_PARTITION
 } AvbIOResult;
 
 struct AvbOps;
@@ -110,40 +113,44 @@ struct AvbOps {
    * embedded key material generated with 'avbtool
    * extract_public_key'.
    *
-   * Return true if trusted or false if untrusted.
+   * If AVB_IO_RESULT_OK is returned then |out_is_trusted| is set -
+   * true if trusted or false if untrusted.
    */
-  bool (*validate_vbmeta_public_key)(AvbOps* ops,
-                                     const uint8_t* public_key_data,
-                                     size_t public_key_length);
+  AvbIOResult (*validate_vbmeta_public_key)(AvbOps* ops,
+                                            const uint8_t* public_key_data,
+                                            size_t public_key_length,
+                                            bool* out_is_trusted);
 
   /* Gets the rollback index corresponding to the slot given by
    * |rollback_index_slot|. The value is returned in
-   * |out_rollback_index|. Returns true if the rollback index was
-   * retrieved, false on error.
+   * |out_rollback_index|. Returns AVB_IO_RESULT_OK if the rollback
+   * index was retrieved, otherwise an error code.
    *
    * A device may have a limited amount of rollback index slots (say,
    * one or four) so may error out if |rollback_index_slot| exceeds
    * this number.
    */
-  bool (*read_rollback_index)(AvbOps* ops, size_t rollback_index_slot,
-                              uint64_t* out_rollback_index);
+  AvbIOResult (*read_rollback_index)(AvbOps* ops, size_t rollback_index_slot,
+                                     uint64_t* out_rollback_index);
 
   /* Sets the rollback index corresponding to the slot given by
-   * |rollback_index_slot| to |rollback_index|. Returns true if
-   * the rollback index was set, false on error.
+   * |rollback_index_slot| to |rollback_index|. Returns
+   * AVB_IO_RESULT_OK if the rollback index was set, otherwise an
+   * error code.
    *
    * A device may have a limited amount of rollback index slots (say,
    * one or four) so may error out if |rollback_index_slot| exceeds
    * this number.
    */
-  bool (*write_rollback_index)(AvbOps* ops, size_t rollback_index_slot,
-                               uint64_t rollback_index);
+  AvbIOResult (*write_rollback_index)(AvbOps* ops, size_t rollback_index_slot,
+                                      uint64_t rollback_index);
 
   /* Gets whether the device is unlocked. The value is returned in
    * |out_is_unlocked| (true if unlocked, false otherwise). Returns
-   * true if the state was retrieved, false on error.
+   * AVB_IO_RESULT_OK if the state was retrieved, otherwise an error
+   * code.
    */
-  bool (*read_is_device_unlocked)(AvbOps* ops, bool* out_is_unlocked);
+  AvbIOResult (*read_is_device_unlocked)(AvbOps* ops, bool* out_is_unlocked);
 
   /* Gets the unique partition GUID for a partition with name in
    * |partition| (NUL-terminated UTF-8 string). The GUID is copied as
@@ -153,11 +160,12 @@ struct AvbOps {
    *
    *  527c1c6d-6361-4593-8842-3c78fcd39219
    *
-   * Returns false if the operation fails (no such partition or
-   * |buf_size| is too small), true if it succeeds.
+   * Returns AVB_IO_RESULT_OK on success, otherwise an error code.
    */
-  bool (*get_unique_guid_for_partition)(AvbOps* ops, const char* partition,
-                                        char* guid_buf, size_t guid_buf_size);
+  AvbIOResult (*get_unique_guid_for_partition)(AvbOps* ops,
+                                               const char* partition,
+                                               char* guid_buf,
+                                               size_t guid_buf_size);
 };
 
 #ifdef __cplusplus
