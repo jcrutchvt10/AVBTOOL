@@ -635,7 +635,7 @@ static int cmdline_append_hex(AvbSlotVerifyData* slot_data, const char* key,
     hex_data[n * 2] = hex_digits[data[n] >> 4];
     hex_data[n * 2 + 1] = hex_digits[data[n] & 0x0f];
   }
-  hex_data[n] = '\0';
+  hex_data[n * 2] = '\0';
 
   ret = cmdline_append_option(slot_data, key, hex_data);
   avb_free(hex_data);
