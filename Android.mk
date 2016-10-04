@@ -35,8 +35,7 @@ avb_common_cflags := \
     -Wno-psabi \
     -Wno-unused-parameter \
     -ffunction-sections \
-    -fstack-protector-strong \
-    -fvisibility=hidden
+    -fstack-protector-strong
 avb_common_cppflags := \
     -Wnon-virtual-dtor \
     -fno-strict-aliasing
@@ -56,7 +55,7 @@ LOCAL_MODULE := libavb
 LOCAL_MODULE_HOST_OS := linux
 LOCAL_EXPORT_C_INDLUDE_DIRS := $(LOCAL_PATH)/libavb
 LOCAL_CLANG := true
-LOCAL_CFLAGS := $(avb_common_cflags) -fno-stack-protector -DAVB_ENABLE_DEBUG -DAVB_COMPILATION
+LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_ENABLE_DEBUG -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
 LOCAL_C_INCLUDES :=
 LOCAL_SRC_FILES := \
@@ -158,8 +157,10 @@ LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/libavb
-LOCAL_SHARED_LIBRARIES := libcutils
+LOCAL_SHARED_LIBRARIES := libcutils libavb
 LOCAL_STATIC_LIBRARIES := libfs_mgr
+LOCAL_POST_INSTALL_CMD := $(hide) ln -sf bootctrl.avb.so \
+    $(TARGET_OUT_SHARED_LIBRARIES)/hw/bootctrl.default.so
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
