@@ -451,8 +451,6 @@ class ImageHandler(object):
     is_sparse: Whether the file being operated on is sparse.
     block_size: The block size, typically 4096.
     image_size: The size of the unsparsified file.
-    care_size: Position in the unsparsified file where only
-      DONT_CARE data follows.
   """
   # See system/core/libsparse/sparse_format.h for details.
   MAGIC = 0xed26ff3a
@@ -489,7 +487,6 @@ class ImageHandler(object):
     self._file_pos = 0
     self._image = open(self._image_filename, 'r+b')
     self._image.seek(0, os.SEEK_END)
-    self.care_size = self._image.tell()
     self.image_size = self._image.tell()
 
     self._image.seek(0, os.SEEK_SET)
@@ -521,8 +518,6 @@ class ImageHandler(object):
     # image.
     offset = 0
     output_offset = 0
-    last_dont_care_section_output_offset = None
-    last_section_was_dont_care = False
     for _ in xrange(1, self._num_total_chunks + 1):
       chunk_offset = self._image.tell()
 
@@ -530,8 +525,6 @@ class ImageHandler(object):
       (chunk_type, _, chunk_sz, total_sz) = struct.unpack(ImageChunk.FORMAT,
                                                           header_bin)
       data_sz = total_sz - struct.calcsize(ImageChunk.FORMAT)
-
-      last_section_was_dont_care = False
 
       if chunk_type == ImageChunk.TYPE_RAW:
         if data_sz != (chunk_sz * self.block_size):
@@ -561,10 +554,6 @@ class ImageHandler(object):
         if data_sz != 0:
           raise ValueError('Don\'t care chunk input size is non-zero ({})'.
                            format(data_sz))
-        else:
-          if not last_section_was_dont_care:
-            last_dont_care_section_output_offset = output_offset
-            last_section_was_dont_care = True
         self._chunks.append(ImageChunk(ImageChunk.TYPE_DONT_CARE,
                                        chunk_offset,
                                        output_offset,
@@ -594,12 +583,8 @@ class ImageHandler(object):
       raise ValueError('There were {} bytes of extra data at the end of the '
                        'file.'.format(junk_len))
 
-    # Assign |image_size| and |care_size| attributes.
+    # Assign |image_size|.
     self.image_size = output_offset
-    if last_section_was_dont_care:
-      self.care_size = last_dont_care_section_output_offset
-    else:
-      self.care_size = output_offset
 
     # This is used when bisecting in read() to find the initial slice.
     self._chunk_output_offsets = [i.output_offset for i in self._chunks]
@@ -1547,6 +1532,13 @@ class Avb(object):
   AB_MINOR_VERSION = 0
   AB_MISC_METADATA_OFFSET = 2048
 
+  # Constants for maximum metadata size. These are used to give
+  # meaningful errors if the value passed in via --partition_size is
+  # too small and when --calc_max_image_size is used. We use
+  # conservative figures.
+  MAX_VBMETA_SIZE = 64 * 1024
+  MAX_FOOTER_SIZE = 4096
+
   def erase_footer(self, image_filename, keep_hashtree):
     """Implements the 'erase_footer' command.
 
@@ -1681,8 +1673,7 @@ class Avb(object):
     """
     assert isinstance(image, ImageHandler)
     footer = None
-    image_size = image.care_size
-    image.seek(image_size - AvbFooter.SIZE)
+    image.seek(image.image_size - AvbFooter.SIZE)
     try:
       footer = AvbFooter(image.read(AvbFooter.SIZE))
     except (LookupError, struct.error):
@@ -1702,7 +1693,7 @@ class Avb(object):
     image.seek(desc_start_offset)
     descriptors = parse_descriptors(image.read(h.descriptors_size))
 
-    return footer, h, descriptors, image_size
+    return footer, h, descriptors, image.image_size
 
   def _get_cmdline_descriptor_for_dm_verity(self, image):
     """Generate kernel cmdline descriptor for dm-verity.
@@ -2021,20 +2012,31 @@ class Avb(object):
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool add_hash_footer' is idempotent (modulo
     # salts).
-    image_size = image.care_size
-    image.seek(image_size - AvbFooter.SIZE)
+    image.seek(image.image_size - AvbFooter.SIZE)
     try:
       footer = AvbFooter(image.read(AvbFooter.SIZE))
       # Existing footer found. Just truncate.
       original_image_size = footer.original_image_size
-      image_size = footer.original_image_size
-      image.truncate(image_size)
+      image.truncate(footer.original_image_size)
     except (LookupError, struct.error):
-      original_image_size = image_size
+      original_image_size = image.image_size
 
     # If anything goes wrong from here-on, restore the image back to
     # its original size.
     try:
+      # First, calculate the maximum image size such that an image
+      # this size + metadata (footer + vbmeta struct) fits in
+      # |partition_size|.
+      max_metadata_size = self.MAX_VBMETA_SIZE + self.MAX_FOOTER_SIZE
+      max_image_size = partition_size - max_metadata_size
+
+      # If image size exceeds the maximum image size, fail.
+      if image.image_size > max_image_size:
+        raise AvbError('Image size of {} exceeds maximum image '
+                       'size of {} in order to fit in a partition '
+                       'size of {}.'.format(image.image_size, max_image_size,
+                                            partition_size))
+
       digest_size = len(hashlib.new(name=hash_algorithm).digest())
       if salt:
         salt = salt.decode('hex')
@@ -2052,11 +2054,11 @@ class Avb(object):
       # memory pressure, then again, this is only supposed to be used
       # on kernel/initramfs partitions. Possible optimization.
       image.seek(0)
-      hasher.update(image.read(image_size))
+      hasher.update(image.read(image.image_size))
       digest = hasher.digest()
 
       h_desc = AvbHashDescriptor()
-      h_desc.image_size = image_size
+      h_desc.image_size = image.image_size
       h_desc.hash_algorithm = hash_algorithm
       h_desc.partition_name = partition_name
       h_desc.salt = salt
@@ -2069,22 +2071,18 @@ class Avb(object):
           generate_dm_verity_cmdline_from_hashtree,
           include_descriptors_from_image)
 
-      # We might have a DONT_CARE hole at the end (in which case
-      # |image.care_size| < |image.image_size|) so truncate here.
-      image.truncate(image.care_size)
-
       # If the image isn't sparse, its size might not be a multiple of
       # the block size. This will screw up padding later so just grow it.
-      if image.care_size % image.block_size != 0:
+      if image.image_size % image.block_size != 0:
         assert not image.is_sparse
-        padding_needed = image.block_size - (image.care_size%image.block_size)
-        image.truncate(image.care_size + padding_needed)
+        padding_needed = image.block_size - (image.image_size%image.block_size)
+        image.truncate(image.image_size + padding_needed)
 
       # The append_raw() method requires content with size being a
       # multiple of |block_size| so add padding as needed. Also record
       # where this is written to since we'll need to put that in the
       # footer.
-      vbmeta_offset = image.care_size
+      vbmeta_offset = image.image_size
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
                         len(vbmeta_blob))
       vbmeta_blob_with_padding = vbmeta_blob + '\0'*padding_needed
@@ -2118,7 +2116,8 @@ class Avb(object):
                           key_path, rollback_index, props, props_from_file,
                           kernel_cmdlines,
                           generate_dm_verity_cmdline_from_hashtree,
-                          include_descriptors_from_image):
+                          include_descriptors_from_image,
+                          calc_max_image_size):
     """Implements the 'add_hashtree_footer' command.
 
     See https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity for
@@ -2141,10 +2140,31 @@ class Avb(object):
         dm-verity kernel cmdline from.
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
+      calc_max_image_size: Don't store the hashtree or footer - instead
+        calculate the maximum image size leaving enough room for hashtree
+        and metadata with the given |partition_size|.
 
     Raises:
       AvbError: If an argument is incorrect.
     """
+    digest_size = len(hashlib.new(name=hash_algorithm).digest())
+    digest_padding = round_to_pow2(digest_size) - digest_size
+
+    # First, calculate the maximum image size such that an image
+    # this size + the hashtree + metadata (footer + vbmeta struct)
+    # fits in |partition_size|. We use very conservative figures for
+    # metadata.
+    (_, max_tree_size) = calc_hash_level_offsets(
+        partition_size, block_size, digest_size + digest_padding)
+    max_metadata_size = (max_tree_size + self.MAX_VBMETA_SIZE +
+                         self.MAX_FOOTER_SIZE)
+    max_image_size = partition_size - max_metadata_size
+
+    # If we're asked to only calculate the maximum image size, we're done.
+    if calc_max_image_size:
+      print '{}'.format(max_image_size)
+      return
+
     image = ImageHandler(image_filename)
 
     if partition_size % image.block_size != 0:
@@ -2155,28 +2175,29 @@ class Avb(object):
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool add_hashtree_footer' is idempotent
     # (modulo salts).
-    image_size = image.care_size
-    image.seek(image_size - AvbFooter.SIZE)
+    image.seek(image.image_size - AvbFooter.SIZE)
     try:
       footer = AvbFooter(image.read(AvbFooter.SIZE))
       # Existing footer found. Just truncate.
       original_image_size = footer.original_image_size
-      image_size = footer.original_image_size
-      image.truncate(image_size)
+      image.truncate(footer.original_image_size)
     except (LookupError, struct.error):
-      original_image_size = image_size
+      original_image_size = image.image_size
 
     # If anything goes wrong from here-on, restore the image back to
     # its original size.
     try:
       # Ensure image is multiple of block_size.
-      rounded_image_size = round_to_multiple(image_size, block_size)
-      if rounded_image_size > image_size:
-        image.append_raw('\0' * (rounded_image_size - image_size))
-        image_size = rounded_image_size
+      rounded_image_size = round_to_multiple(image.image_size, block_size)
+      if rounded_image_size > image.image_size:
+        image.append_raw('\0' * (rounded_image_size - image.image_size))
 
-      digest_size = len(hashlib.new(name=hash_algorithm).digest())
-      digest_padding = round_to_pow2(digest_size) - digest_size
+      # If image size exceeds the maximum image size, fail.
+      if image.image_size > max_image_size:
+        raise AvbError('Image size of {} exceeds maximum image '
+                       'size of {} in order to fit in a partition '
+                       'size of {}.'.format(image.image_size, max_image_size,
+                                            partition_size))
 
       if salt:
         salt = salt.decode('hex')
@@ -2192,37 +2213,29 @@ class Avb(object):
       # Hashes are stored upside down so we need to calculate hash
       # offsets in advance.
       (hash_level_offsets, tree_size) = calc_hash_level_offsets(
-          image_size, block_size, digest_size + digest_padding)
-
-      # We might have a DONT_CARE hole at the end (in which case
-      # |image.care_size| < |image.image_size|) so truncate here.
-      image.truncate(image.care_size)
+          image.image_size, block_size, digest_size + digest_padding)
 
       # If the image isn't sparse, its size might not be a multiple of
       # the block size. This will screw up padding later so just grow it.
-      if image.care_size % image.block_size != 0:
+      if image.image_size % image.block_size != 0:
         assert not image.is_sparse
-        padding_needed = image.block_size - (image.care_size%image.block_size)
-        image.truncate(image.care_size + padding_needed)
+        padding_needed = image.block_size - (image.image_size%image.block_size)
+        image.truncate(image.image_size + padding_needed)
 
       # Generate the tree and add padding as needed.
-      tree_offset = image.care_size
-      root_digest, hash_tree = generate_hash_tree(image, image_size,
+      tree_offset = image.image_size
+      root_digest, hash_tree = generate_hash_tree(image, image.image_size,
                                                   block_size,
                                                   hash_algorithm, salt,
                                                   digest_padding,
                                                   hash_level_offsets,
                                                   tree_size)
-      padding_needed = (round_to_multiple(len(hash_tree), image.block_size) -
-                        len(hash_tree))
-      hash_tree_with_padding = hash_tree + '\0'*padding_needed
-      image.append_raw(hash_tree_with_padding)
 
       # Generate HashtreeDescriptor with details about the tree we
       # just generated.
       ht_desc = AvbHashtreeDescriptor()
       ht_desc.dm_verity_version = 1
-      ht_desc.image_size = image_size
+      ht_desc.image_size = image.image_size
       ht_desc.tree_offset = tree_offset
       ht_desc.tree_size = tree_size
       ht_desc.data_block_size = block_size
@@ -2231,6 +2244,12 @@ class Avb(object):
       ht_desc.partition_name = partition_name
       ht_desc.salt = salt
       ht_desc.root_digest = root_digest
+
+      # Write the hash tree
+      padding_needed = (round_to_multiple(len(hash_tree), image.block_size) -
+                        len(hash_tree))
+      hash_tree_with_padding = hash_tree + '\0'*padding_needed
+      image.append_raw(hash_tree_with_padding)
 
       # Generate the VBMeta footer and add padding as needed.
       vbmeta_offset = tree_offset + len(hash_tree_with_padding)
@@ -2246,7 +2265,7 @@ class Avb(object):
 
       # Now insert a DONT_CARE chunk with enough bytes such that the
       # final Footer block is at the end of partition_size..
-      image.append_dont_care(partition_size - image.care_size -
+      image.append_dont_care(partition_size - image.image_size -
                              1*image.block_size)
 
       # Generate the Footer that tells where the VBMeta footer
@@ -2262,7 +2281,7 @@ class Avb(object):
       image.append_raw(footer_blob_with_padding)
 
     except:
-      # Truncate back to original size, then re-raise
+      # Truncate back to original size, then re-raise.
       image.truncate(original_image_size)
       raise
 
@@ -2480,7 +2499,7 @@ class AvbTool(object):
                             required=True)
     sub_parser.add_argument('--partition_name',
                             help='Partition name',
-                            required=True)
+                            default=None)
     sub_parser.add_argument('--hash_algorithm',
                             help='Hash algorithm to use (default: sha1)',
                             default='sha1')
@@ -2490,6 +2509,13 @@ class AvbTool(object):
                             help='Block size (default: 4096)',
                             type=parse_number,
                             default=4096)
+    sub_parser.add_argument('--calc_max_image_size',
+                            help=('Don\'t store the hashtree or footer - '
+                                  'instead calculate the maximum image size '
+                                  'leaving enough room for hashtree '
+                                  'and metadata with the given partition '
+                                  'size.'),
+                            action='store_true')
     self._add_common_args(sub_parser)
     sub_parser.set_defaults(func=self.add_hashtree_footer)
 
@@ -2569,13 +2595,17 @@ class AvbTool(object):
 
   def add_hashtree_footer(self, args):
     """Implements the 'add_hashtree_footer' sub-command."""
-    self.avb.add_hashtree_footer(args.image.name, args.partition_size,
-                                 args.partition_name, args.hash_algorithm,
-                                 args.block_size, args.salt, args.algorithm,
-                                 args.key, args.rollback_index, args.prop,
-                                 args.prop_from_file, args.kernel_cmdline,
+    self.avb.add_hashtree_footer(args.image.name if args.image else None,
+                                 args.partition_size,
+                                 args.partition_name,
+                                 args.hash_algorithm, args.block_size,
+                                 args.salt, args.algorithm, args.key,
+                                 args.rollback_index, args.prop,
+                                 args.prop_from_file,
+                                 args.kernel_cmdline,
                                  args.generate_dm_verity_cmdline_from_hashtree,
-                                 args.include_descriptors_from_image)
+                                 args.include_descriptors_from_image,
+                                 args.calc_max_image_size)
 
   def erase_footer(self, args):
     """Implements the 'erase_footer' sub-command."""

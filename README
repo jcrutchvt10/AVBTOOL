@@ -191,6 +191,14 @@ hashtree can optionally be kept in place.
 
   $ avbtool erase_footer --image IMAGE [--keep_hashtree]
 
+To calculate the maximum size of an image that will fit in a partition
+of a given size after having used the 'avbtool add_hashtree_footer'
+command on it, use the --calc_max_image_size option:
+
+  $ avbtool add_hashtree_footer --partition_size $((10*1024*1024)) \
+     --calc_max_image_size
+  10330112
+
 -- BUILD SYSTEM INTEGRATION NOTES
 
 Android Verified Boot is enabled by the BOARD_AVB_ENABLE variable
