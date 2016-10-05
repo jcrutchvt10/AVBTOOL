@@ -1,0 +1,41 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2016 The Android Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# This shell-script checks the symbols in libavb_host.a and fails
+# if a reference not starting with avb_ is referenced. It's intended
+# to catch mistakes where the standard C library is inadvertently
+# used.
+
+set -e
+
+SYMBOLS_FILE=$(mktemp /tmp/libavb_host_symbols.XXXXXXXXXX)
+
+trap "rm -f '${SYMBOLS_FILE}'" EXIT
+
+readelf --symbols --wide "${ANDROID_HOST_OUT}/obj/STATIC_LIBRARIES/libavb_host_intermediates/libavb_host.a" | \
+  awk '$7 == "UND" && $8 != "" {print $8}' | \
+  grep -v ^avb_ | \
+  sort -u > "${SYMBOLS_FILE}"
+
+# If this file is non-empty, it means that the library is using
+# symbols not starting with "avb_".
+if [ -s "${SYMBOLS_FILE}" ] ; then
+  echo "ERROR: $0: Unexpected symbols in libavb_host:" >&2
+  cat "${SYMBOLS_FILE}" >&2
+  exit 1
+fi

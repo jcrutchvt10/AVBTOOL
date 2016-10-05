@@ -1,0 +1,210 @@
+This directory contains avbtool and libavb.
+
+The main job of avbtool is to create vbmeta.img which is the
+top-level object for verified boot. This image is designed to go into
+the vbmeta partition (or, if using A/B, the slot in question
+e.g. vbmeta_a or vbmeta_b) and be of minimal size (for out-of-band
+updates). The vbmeta image is cryptographically signed and contains
+verification data (e.g. cryptographic digests) for verifying boot.img,
+system.img, and other partitions/images.
+
+The vbmeta image can also contain references to other partitions where
+verification data is stored as well as a public key indicating who
+should sign the verification data. This indirection provides
+delegation, that is, it allows a 3rd party to control content on a given
+partition by including the public key said 3rd party is using to sign
+the data with, in vbmeta.img. By design, this authority can be easily
+revoked by simply updating vbmeta.img with new descriptors for the
+partition in question.
+
+Storing signed verification data on other images - for example
+boot.img and system.img - is also done with avbtool.
+
+In addition to avbtool, a library - libavb - is provided. This library
+performs all verification on the device side e.g. it starts by loading
+the vbmeta partition, checks the signature, and then goes on to load
+the boot partition for verification.
+
+The libavb library is intended to be used in both boot loaders and
+inside Android. It has a simple abstraction for system dependencies
+(see libavb/avb_sysdeps.h) as well as operations that the boot loader
+or OS is expected to implement (see libavb/avb_ops.h).
+
+In addition to handling verified boot, libavb will in the future be
+extended to handle A/B selection in a way that can be used in the
+device's fastboot implementation, its boot loader, and its
+boot_control HAL implementation. This will be implemented in a future
+CL.
+
+-- FILES AND DIRECTORIES
+
+ libavb/
+
+   An implementation for image verification and A/B selection. This
+   code is designed to be highly portable so it can be used in as many
+   contexts as possible. This code requires a C99-compliant C
+   compiler.
+
+   Part of this code is considered internal to the implementation and
+   should not be used outside it. For example, this applies to the
+   avb_rsa.[ch] and avb_sha.[ch] files.
+
+   System dependencies expected to be provided by the platform is
+   defined in avb_sysdeps.h. If the platform provides the standard C
+   runtime avb_sysdeps_posix.c can be used.
+
+ Android.mk
+
+   Build instructions for building libavb_host (for unit tests),
+   libavb (for use on the device) and associated unit tests.
+
+ avbtool
+
+   A tool written in Python for working with images related to
+   verified boot.
+
+ test/
+
+   Contains unit tests for abvtool and libavb.
+
+-- AUDIENCE AND PORTABILITY NOTES
+
+This code is intended to be used in bootloaders in devices running
+Android. The suggested approach is to copy the appropriate header and
+C files mentioned in the previous section into the boot loader and
+integrate as appropriate.
+
+The libavb/ codebase will evolve over time so integration should be as
+non-invasive as possible. The intention is to keep the API of the
+library stable however it will be broken if necessary.
+
+As for portability, the library is intended to be highly portable,
+work on both little- and big-endian architectures and 32- and
+64-bit. It's also intended to work in non-standard environments
+without the standard C library and runtime.
+
+If the AVB_ENABLE_DEBUG preprocessor symbol is set, the code will
+include useful debug information and run-time checks. Production
+builds should not use this.
+
+The preprocessor symbol AVB_COMPILATION should be set only when
+compiling the library. The code must be compiled into a separate
+library.
+
+Applications using the compiled library must only include the
+libavb/libavb.h file (which will include all public interfaces) and
+must not have the AVB_COMPILATION preprocessor symbol set. This is to
+ensure that internal code that may be change in the future (for
+example avb_sha.[ch] and avb_rsa.[ch]) will not be visible to
+application code.
+
+-- COMPATIBILITY NOTES
+
+The VBMeta structure (as defined in libavb/avb_vbmeta_header.h)
+guarantees forwards- and backwards-compatibility provided the major
+version does not change.
+
+When backwards-compatible changes are made - for example, when a new
+field is added to AvbVBMetaImageHeader - the minor version will be
+bumped. At the same time, libavb will also be modified to test for the
+appropriate minor version before attempting to access the newly added
+field. This ensures that version 1.N of the library is able to read an
+old vbmeta image header produced with version 1.M where N > M.
+
+The usual scenario is that the code parsing the AvbVBMetaImageHeader
+rarely changes (it's usually in the firmware of a device and this
+firmware is rarely updated if ever), let's say it's fixed at version
+1.N. At the same time, the version of the avbtool used to produce the
+vbmeta image is rolling forward and is at version 1.M where M > N. The
+problem with this scenario is that version 1.M may easily and
+inadvertently introduce a seemingly compatible change that isn't. For
+example, consider if a new verification algorithm is added - in this
+case version 1.N of the reference implementation will fail at
+verification time when validating the |algorithm_field| of a 1.M image
+if it's set to the new algorithm.
+
+The best approach for dealing with this problem is to always used a
+pinned version of avbtool (say, use version 1.N to generate images
+targeted for devices running version 1.N) for generating and signing
+images but sometimes this is not always possible nor
+desirable. Therefore, to avoid this compatibility problem, avbtool is
+designed to always take such input as a command-line argument so it
+can be kept constant by the caller. In other words, as long as you
+keep your command-line options passed to the avb tool the same, images
+produced by newer versions of avb will continue to work on the same
+version of the reference implementation.
+
+-- USAGE
+
+The content for the vbmeta partition can be generated as follows:
+
+ $ avbtool make_vbmeta_image                                                \
+     --output OUTPUT                                                        \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing.bin]      \
+     [--rollback_index NUMBER]                                              \
+     [--include_descriptors_from_footer /path/to/image.bin]                 \
+     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]          \
+     [--chain_partition part_name:rollback_index_slot:/path/to/key1.bin]
+
+An integrity footer containing the hash for an entire partition can be
+added to an existing image as follows:
+
+ $ avbtool add_hash_footer                                             \
+     --image IMAGE                                                     \
+     --partition_name PARTNAME --partition_size SIZE                   \
+     [--rollback_index NUMBER]                                         \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing.bin] \
+     [--hash_algorithm HASH_ALG] [--salt HEX]                          \
+     [--include_descriptors_from_footer /path/to/image.bin]            \
+     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]
+
+An integrity footer containing the root digest and salt for a hashtree
+for a partition can be added to an existing image as follows. The
+hashtree is also appended to the image.
+
+  $ avbtool add_hashtree_footer                                        \
+     --image IMAGE                                                     \
+     --partition_name PARTNAME --partition_size SIZE                   \
+     [--rollback_index NUMBER]                                         \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing.bin] \
+     [--hash_algorithm HASH_ALG] [--salt HEX] [--block_size SIZE]      \
+     [--include_descriptors_from_footer /path/to/image.bin]            \
+     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]
+
+The integrity footer on an image can be removed from an image. The
+hashtree can optionally be kept in place.
+
+  $ avbtool erase_footer --image IMAGE [--keep_hashtree]
+
+-- BUILD SYSTEM INTEGRATION NOTES
+
+Android Verified Boot is enabled by the BOARD_AVB_ENABLE variable
+
+ BOARD_AVB_ENABLE := true
+
+This will make the build system create vbmeta.img which will contain a
+hash descriptor for boot.img, a hashtree descriptor for system.img, a
+kernel-cmdline descriptor for setting up dm-verity for system.img and
+append a hash-tree to system.img.
+
+By default, the algorithm SHA256_RSA4096 is used with a test key from
+this directory. This can be overriden by the BOARD_AVB_ALGORITHM and
+BOARD_AVB_KEY_PATH variables to use e.g. RSA-4096:
+
+ BOARD_AVB_ALGORITHM := SHA512_RSA4096
+ BOARD_AVB_KEY_PATH := /path/to/rsa_key_4096bits.pem
+
+Remember that the public part of this key needs to be embedded in the
+bootloader of the device expected to process resulting images. Use
+'avbtool extract_public_key' to do this.
+
+To prevent rollback attakcs, the rollback index should be increased on
+a regular basis. The rollback index can be set with the
+BOARD_AVB_ROLLBACK_INDEX variable:
+
+ BOARD_AVB_ROLLBACK_INDEX := 5
+
+If this is not set, the rollback index defaults to 0.
+
+The variable BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS to specify additional
+options passed to 'avbtool make_vbmeta_image'.

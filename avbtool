@@ -1,0 +1,1970 @@
+#!/usr/bin/env python
+
+# Copyright 2016, The Android Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+"""Command-line tool for working with Brillo Verified Boot images."""
+
+import argparse
+import hashlib
+import os
+import struct
+import subprocess
+import sys
+
+import Crypto.PublicKey.RSA
+
+# Keep in sync with avb_vbmeta_header.h.
+AVB_VERSION_MAJOR = 1
+AVB_VERSION_MINOR = 0
+
+
+class AvbError(Exception):
+  """Application-specific errors.
+
+  These errors represent issues for which a stack-trace should not be
+  presented.
+
+  Attributes:
+    message: Error message.
+  """
+
+  def __init__(self, message):
+    Exception.__init__(self, message)
+
+
+class Algorithm(object):
+  """Contains details about an algorithm.
+
+  See the avb_vbmeta_header.h file for more details about
+  algorithms.
+
+  The constant |ALGORITHMS| is a dictionary from human-readable
+  names (e.g 'SHA256_RSA2048') to instances of this class.
+
+  Attributes:
+    algorithm_type: Integer code corresponding to |AvbAlgorithmType|.
+    hash_num_bytes: Number of bytes used to store the hash.
+    signature_num_bytes: Number of bytes used to store the signature.
+    public_key_num_bytes: Number of bytes used to store the public key.
+    padding: Padding used for signature, if any.
+  """
+
+  def __init__(self, algorithm_type, hash_num_bytes, signature_num_bytes,
+               public_key_num_bytes, padding):
+    self.algorithm_type = algorithm_type
+    self.hash_num_bytes = hash_num_bytes
+    self.signature_num_bytes = signature_num_bytes
+    self.public_key_num_bytes = public_key_num_bytes
+    self.padding = padding
+
+# This must be kept in sync with the avb_crypto.h file.
+#
+# The PKC1-v1.5 padding is a blob of binary DER of ASN.1 and is
+# obtained from section 5.2.2 of RFC 4880.
+ALGORITHMS = {
+    'NONE': Algorithm(
+        algorithm_type=0,        # AVB_ALGORITHM_TYPE_NONE
+        hash_num_bytes=0,
+        signature_num_bytes=0,
+        public_key_num_bytes=0,
+        padding=[]),
+    'SHA256_RSA2048': Algorithm(
+        algorithm_type=1,        # AVB_ALGORITHM_TYPE_SHA256_RSA2048
+        hash_num_bytes=32,
+        signature_num_bytes=256,
+        public_key_num_bytes=8 + 2*2048/8,
+        padding=[
+            # PKCS1-v1_5 padding
+            0x00, 0x01] + [0xff]*202 + [0x00] + [
+                # ASN.1 header
+                0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+                0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+                0x00, 0x04, 0x20,
+            ]),
+    'SHA256_RSA4096': Algorithm(
+        algorithm_type=2,        # AVB_ALGORITHM_TYPE_SHA256_RSA4096
+        hash_num_bytes=32,
+        signature_num_bytes=512,
+        public_key_num_bytes=8 + 2*4096/8,
+        padding=[
+            # PKCS1-v1_5 padding
+            0x00, 0x01] + [0xff]*458 + [0x00] + [
+                # ASN.1 header
+                0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+                0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+                0x00, 0x04, 0x20,
+            ]),
+    'SHA256_RSA8192': Algorithm(
+        algorithm_type=3,        # AVB_ALGORITHM_TYPE_SHA256_RSA8192
+        hash_num_bytes=32,
+        signature_num_bytes=1024,
+        public_key_num_bytes=8 + 2*8192/8,
+        padding=[
+            # PKCS1-v1_5 padding
+            0x00, 0x01] + [0xff]*970 + [0x00] + [
+                # ASN.1 header
+                0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+                0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+                0x00, 0x04, 0x20,
+            ]),
+    'SHA512_RSA2048': Algorithm(
+        algorithm_type=4,        # AVB_ALGORITHM_TYPE_SHA512_RSA2048
+        hash_num_bytes=64,
+        signature_num_bytes=256,
+        public_key_num_bytes=8 + 2*2048/8,
+        padding=[
+            # PKCS1-v1_5 padding
+            0x00, 0x01] + [0xff]*170 + [0x00] + [
+                # ASN.1 header
+                0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+                0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
+                0x00, 0x04, 0x40
+            ]),
+    'SHA512_RSA4096': Algorithm(
+        algorithm_type=5,        # AVB_ALGORITHM_TYPE_SHA512_RSA4096
+        hash_num_bytes=64,
+        signature_num_bytes=512,
+        public_key_num_bytes=8 + 2*4096/8,
+        padding=[
+            # PKCS1-v1_5 padding
+            0x00, 0x01] + [0xff]*426 + [0x00] + [
+                # ASN.1 header
+                0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+                0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
+                0x00, 0x04, 0x40
+            ]),
+    'SHA512_RSA8192': Algorithm(
+        algorithm_type=6,        # AVB_ALGORITHM_TYPE_SHA512_RSA8192
+        hash_num_bytes=64,
+        signature_num_bytes=1024,
+        public_key_num_bytes=8 + 2*8192/8,
+        padding=[
+            # PKCS1-v1_5 padding
+            0x00, 0x01] + [0xff]*938 + [0x00] + [
+                # ASN.1 header
+                0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+                0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
+                0x00, 0x04, 0x40
+            ]),
+}
+
+
+def round_to_multiple(number, size):
+  """Rounds a number up to nearest multiple of another number.
+
+  Args:
+    number: The number to round up.
+    size: The multiple to round up to.
+
+  Returns:
+    If |number| is a multiple of |size|, returns |number|, otherwise
+    returns |number| + |size|.
+  """
+  remainder = number % size
+  if remainder == 0:
+    return number
+  return number + size - remainder
+
+
+def round_to_pow2(number):
+  """Rounds a number up to the next power of 2.
+
+  Args:
+    number: The number to round up.
+
+  Returns:
+    If |number| is already a power of 2 then |number| is
+    returned. Otherwise the smallest power of 2 greater than |number|
+    is returned.
+  """
+  return 2**((number - 1).bit_length())
+
+
+def write_long(output, num_bits, value):
+  """Writes a long to an output stream using a given amount of bits.
+
+  This number is written big-endian, e.g. with the most significant
+  bit first.
+
+  Arguments:
+    output: The object to write the output to.
+    num_bits: The number of bits to write, e.g. 2048.
+    value: The value to write.
+  """
+  for bit_pos in range(num_bits, 0, -8):
+    octet = (value >> (bit_pos - 8)) & 0xff
+    output.write(struct.pack('!B', octet))
+
+
+def encode_long(num_bits, value):
+  """Encodes a long to a bytearray() using a given amount of bits.
+
+  This number is written big-endian, e.g. with the most significant
+  bit first.
+
+  Arguments:
+    num_bits: The number of bits to write, e.g. 2048.
+    value: The value to write.
+
+  Returns:
+    A bytearray() with the encoded long.
+  """
+  ret = bytearray()
+  for bit_pos in range(num_bits, 0, -8):
+    octet = (value >> (bit_pos - 8)) & 0xff
+    ret.extend(struct.pack('!B', octet))
+  return ret
+
+
+def egcd(a, b):
+  """Calculate greatest common divisor of two numbers.
+
+  This implementation uses a recursive version of the extended
+  Euclidian algorithm.
+
+  Arguments:
+    a: First number.
+    b: Second number.
+
+  Returns:
+    A tuple (gcd, x, y) that where |gcd| is the greatest common
+    divisor of |a| and |b| and |a|*|x| + |b|*|y| = |gcd|.
+  """
+  if a == 0:
+    return (b, 0, 1)
+  else:
+    g, y, x = egcd(b % a, a)
+    return (g, x - (b // a) * y, y)
+
+
+def modinv(a, m):
+  """Calculate modular multiplicative inverse of |a| modulo |m|.
+
+  This calculates the number |x| such that |a| * |x| == 1 (modulo
+  |m|). This number only exists if |a| and |m| are co-prime - |None|
+  is returned if this isn't true.
+
+  Arguments:
+    a: The number to calculate a modular inverse of.
+    m: The modulo to use.
+
+  Returns:
+    The modular multiplicative inverse of |a| and |m| or |None| if
+    these numbers are not co-prime.
+  """
+  gcd, x, _ = egcd(a, m)
+  if gcd != 1:
+    return None  # modular inverse does not exist
+  else:
+    return x % m
+
+
+def parse_number(string):
+  """Parse a string as a number.
+
+  This is just a short-hand for int(string, 0) suitable for use in the
+  |type| parameter of |ArgumentParser|'s add_argument() function. An
+  improvement to just using type=int is that this function supports
+  numbers in other bases, e.g. "0x1234".
+
+  Arguments:
+    string: The string to parse.
+
+  Returns:
+    The parsed integer.
+
+  Raises:
+    ValueError: If the number could not be parsed.
+  """
+  return int(string, 0)
+
+
+def write_rsa_key(output, key):
+  """Writes a public RSA key in |AvbRSAPublicKeyHeader| format.
+
+  This writes the |AvbRSAPublicKeyHeader| as well as the two large
+  numbers (|key_num_bits| bits long) following it.
+
+  Arguments:
+    output: The object to write the output to.
+    key: A Crypto.PublicKey.RSA object.
+  """
+  # key.e is exponent
+  # key.n is modulus
+  key_num_bits = key.size() + 1
+  # Calculate n0inv = -1/n[0] (mod 2^32)
+  b = 2L**32
+  n0inv = b - modinv(key.n, b)
+  # Calculate rr = r^2 (mod N), where r = 2^(# of key bits)
+  r = 2L**key.n.bit_length()
+  rrmodn = r * r % key.n
+  output.write(struct.pack('!II', key_num_bits, n0inv))
+  write_long(output, key_num_bits, key.n)
+  write_long(output, key_num_bits, rrmodn)
+
+
+def encode_rsa_key(key):
+  """Encodes a public RSA key in |AvbRSAPublicKeyHeader| format.
+
+  This creates a |AvbRSAPublicKeyHeader| as well as the two large
+  numbers (|key_num_bits| bits long) following it.
+
+  Arguments:
+    key: A Crypto.PublicKey.RSA object.
+
+  Returns:
+    A bytearray() with the |AvbRSAPublicKeyHeader|.
+  """
+  ret = bytearray()
+  # key.e is exponent
+  # key.n is modulus
+  key_num_bits = key.size() + 1
+  # Calculate n0inv = -1/n[0] (mod 2^32)
+  b = 2L**32
+  n0inv = b - modinv(key.n, b)
+  # Calculate rr = r^2 (mod N), where r = 2^(# of key bits)
+  r = 2L**key.n.bit_length()
+  rrmodn = r * r % key.n
+  ret.extend(struct.pack('!II', key_num_bits, n0inv))
+  ret.extend(encode_long(key_num_bits, key.n))
+  ret.extend(encode_long(key_num_bits, rrmodn))
+  return ret
+
+
+def lookup_algorithm_by_type(alg_type):
+  """Looks up algorithm by type.
+
+  Arguments:
+    alg_type: The integer representing the type.
+
+  Returns:
+    A tuple with the algorithm name and an |Algorithm| instance.
+
+  Raises:
+    Exception: If the algorithm cannot be found
+  """
+  for alg_name in ALGORITHMS:
+    alg_data = ALGORITHMS[alg_name]
+    if alg_data.algorithm_type == alg_type:
+      return (alg_name, alg_data)
+  raise AvbError('Unknown algorithm type {}'.format(alg_type))
+
+
+class AvbDescriptor(object):
+  """Class for AVB descriptor.
+
+  See the |AvbDescriptor| C struct for more information.
+
+  Attributes:
+    tag: The tag identifying what kind of descriptor this is.
+    data: The data in the descriptor.
+  """
+
+  SIZE = 16
+  FORMAT_STRING = ('!QQ')  # tag, num_bytes_following (descriptor header)
+
+  def __init__(self, data):
+    """Initializes a new property descriptor.
+
+    Arguments:
+      data: If not None, must be a bytearray().
+
+    Raises:
+      LookupError: If the given descriptor is malformed.
+    """
+    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
+
+    if data:
+      (self.tag, num_bytes_following) = (
+          struct.unpack(self.FORMAT_STRING, data[0:self.SIZE]))
+      self.data = data[self.SIZE:self.SIZE + num_bytes_following]
+    else:
+      self.tag = None
+      self.data = None
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('    Unknown descriptor:\n')
+    o.write('      Tag:  {}\n'.format(self.tag))
+    if len(self.data) < 256:
+      o.write('      Data: {} ({} bytes)\n'.format(
+          repr(str(self.data)), len(self.data)))
+    else:
+      o.write('      Data: {} bytes\n'.format(len(self.data)))
+
+  def encode(self):
+    """Serializes the descriptor.
+
+    Returns:
+      A bytearray() with the descriptor data.
+    """
+    num_bytes_following = len(self.data)
+    nbf_with_padding = round_to_multiple(num_bytes_following, 8)
+    padding_size = nbf_with_padding - num_bytes_following
+    desc = struct.pack(self.FORMAT_STRING, self.tag, nbf_with_padding)
+    padding = struct.pack(str(padding_size) + 'x')
+    ret = desc + self.data + padding
+    return bytearray(ret)
+
+
+class AvbPropertyDescriptor(AvbDescriptor):
+  """A class for property descriptors.
+
+  See the |AvbPropertyDescriptor| C struct for more information.
+
+  Attributes:
+    key: The key.
+    value: The key.
+  """
+
+  TAG = 0
+  SIZE = 32
+  FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
+                   'Q'  # key size (bytes)
+                   'Q')  # value size (bytes)
+
+  def __init__(self, data=None):
+    """Initializes a new property descriptor.
+
+    Arguments:
+      data: If not None, must be a bytearray of size |SIZE|.
+
+    Raises:
+      LookupError: If the given descriptor is malformed.
+    """
+    AvbDescriptor.__init__(self, None)
+    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
+
+    if data:
+      (tag, num_bytes_following, key_size,
+       value_size) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
+      expected_size = round_to_multiple(
+          self.SIZE - 16 + key_size + 1 + value_size + 1, 8)
+      if tag != self.TAG or num_bytes_following != expected_size:
+        raise LookupError('Given data does not look like a property '
+                          'descriptor.')
+      self.key = data[self.SIZE:(self.SIZE + key_size)]
+      self.value = data[(self.SIZE + key_size + 1):(self.SIZE + key_size + 1 +
+                                                    value_size)]
+    else:
+      self.key = ''
+      self.value = ''
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    if len(self.value) < 256:
+      o.write('    Prop: {} -> {}\n'.format(self.key, repr(str(self.value))))
+    else:
+      o.write('    Prop: {} -> ({} bytes)\n'.format(self.key, len(self.value)))
+
+  def encode(self):
+    """Serializes the descriptor.
+
+    Returns:
+      A bytearray() with the descriptor data.
+    """
+    num_bytes_following = self.SIZE + len(self.key) + len(self.value) + 2 - 16
+    nbf_with_padding = round_to_multiple(num_bytes_following, 8)
+    padding_size = nbf_with_padding - num_bytes_following
+    desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
+                       len(self.key), len(self.value))
+    padding = struct.pack(str(padding_size) + 'x')
+    ret = desc + self.key + '\0' + self.value + '\0' + padding
+    return bytearray(ret)
+
+
+class AvbHashtreeDescriptor(AvbDescriptor):
+  """A class for hashtree descriptors.
+
+  See the |AvbHashtreeDescriptor| C struct for more information.
+
+  Attributes:
+    dm_verity_version: dm-verity version used.
+    image_size: Size of the image, after rounding up to |block_size|.
+    tree_offset: Offset of the hash tree in the file.
+    tree_size: Size of the tree.
+    data_block_size: Data block size
+    hash_block_size: Hash block size
+    hash_algorithm: Hash algorithm used.
+    partition_name: Partition name.
+    salt: Salt used.
+    root_digest: Root digest.
+  """
+
+  TAG = 1
+  SIZE = 96
+  FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
+                   'L'  # dm-verity version used
+                   'Q'  # image size (bytes)
+                   'Q'  # tree offset (bytes)
+                   'Q'  # tree size (bytes)
+                   'L'  # data block size (bytes)
+                   'L'  # hash block size (bytes)
+                   '32s'  # hash algorithm used
+                   'L'  # partition name (bytes)
+                   'L'  # salt length (bytes)
+                   'L')  # root digest length (bytes)
+
+  def __init__(self, data=None):
+    """Initializes a new hashtree descriptor.
+
+    Arguments:
+      data: If not None, must be a bytearray of size |SIZE|.
+
+    Raises:
+      LookupError: If the given descriptor is malformed.
+    """
+    AvbDescriptor.__init__(self, None)
+    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
+
+    if data:
+      (tag, num_bytes_following, self.dm_verity_version, self.image_size,
+       self.tree_offset, self.tree_size, self.data_block_size,
+       self.hash_block_size, self.hash_algorithm, partition_name_len, salt_len,
+       root_digest_len) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
+      expected_size = round_to_multiple(
+          self.SIZE - 16 + partition_name_len + salt_len + root_digest_len, 8)
+      if tag != self.TAG or num_bytes_following != expected_size:
+        raise LookupError('Given data does not look like a hashtree '
+                          'descriptor.')
+      # Nuke NUL-bytes at the end.
+      self.hash_algorithm = self.hash_algorithm.split('\0', 1)[0]
+      o = 0
+      self.partition_name = str(data[(self.SIZE + o):(self.SIZE + o +
+                                                      partition_name_len)])
+      # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
+      self.partition_name.decode('utf-8')
+      o += partition_name_len
+      self.salt = data[(self.SIZE + o):(self.SIZE + o + salt_len)]
+      o += salt_len
+      self.root_digest = data[(self.SIZE + o):(self.SIZE + o + root_digest_len)]
+      if root_digest_len != len(hashlib.new(name=self.hash_algorithm).digest()):
+        raise LookupError('root_digest_len doesn\'t match hash algorithm')
+
+    else:
+      self.dm_verity_version = 0
+      self.image_size = 0
+      self.tree_offset = 0
+      self.tree_size = 0
+      self.data_block_size = 0
+      self.hash_block_size = 0
+      self.hash_algorithm = ''
+      self.partition_name = ''
+      self.salt = bytearray()
+      self.root_digest = bytearray()
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('    Hashtree descriptor:\n')
+    o.write('      Version of dm-verity:  {}\n'.format(self.dm_verity_version))
+    o.write('      Image Size:            {} bytes\n'.format(self.image_size))
+    o.write('      Tree Offset:           {}\n'.format(self.tree_offset))
+    o.write('      Tree Size:             {} bytes\n'.format(self.tree_size))
+    o.write('      Data Block Size:       {} bytes\n'.format(
+        self.data_block_size))
+    o.write('      Hash Block Size:       {} bytes\n'.format(
+        self.hash_block_size))
+    o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
+    o.write('      Partition Name:        {}\n'.format(self.partition_name))
+    o.write('      Salt:                  {}\n'.format(str(self.salt).encode(
+        'hex')))
+    o.write('      Root Digest:           {}\n'.format(str(
+        self.root_digest).encode('hex')))
+
+  def encode(self):
+    """Serializes the descriptor.
+
+    Returns:
+      A bytearray() with the descriptor data.
+    """
+    encoded_name = self.partition_name.encode('utf-8')
+    num_bytes_following = (self.SIZE + len(encoded_name) + len(self.salt) +
+                           len(self.root_digest) - 16)
+    nbf_with_padding = round_to_multiple(num_bytes_following, 8)
+    padding_size = nbf_with_padding - num_bytes_following
+    desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
+                       self.dm_verity_version, self.image_size,
+                       self.tree_offset, self.tree_size, self.data_block_size,
+                       self.hash_block_size, self.hash_algorithm,
+                       len(encoded_name), len(self.salt), len(self.root_digest))
+    padding = struct.pack(str(padding_size) + 'x')
+    ret = desc + encoded_name + self.salt + self.root_digest + padding
+    return bytearray(ret)
+
+
+class AvbHashDescriptor(AvbDescriptor):
+  """A class for hash descriptors.
+
+  See the |AvbHashDescriptor| C struct for more information.
+
+  Attributes:
+    image_size: Image size, in bytes.
+    hash_algorithm: Hash algorithm used.
+    partition_name: Partition name.
+    salt: Salt used.
+    digest: The hash value of salt and data combined.
+  """
+
+  TAG = 2
+  SIZE = 68
+  FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
+                   'Q'  # image size (bytes)
+                   '32s'  # hash algorithm used
+                   'L'  # partition name (bytes)
+                   'L'  # salt length (bytes)
+                   'L')  # digest length (bytes)
+
+  def __init__(self, data=None):
+    """Initializes a new hash descriptor.
+
+    Arguments:
+      data: If not None, must be a bytearray of size |SIZE|.
+
+    Raises:
+      LookupError: If the given descriptor is malformed.
+    """
+    AvbDescriptor.__init__(self, None)
+    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
+
+    if data:
+      (tag, num_bytes_following, self.image_size, self.hash_algorithm,
+       partition_name_len, salt_len,
+       digest_len) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
+      expected_size = round_to_multiple(
+          self.SIZE - 16 + partition_name_len + salt_len + digest_len, 8)
+      if tag != self.TAG or num_bytes_following != expected_size:
+        raise LookupError('Given data does not look like a hash ' 'descriptor.')
+      # Nuke NUL-bytes at the end.
+      self.hash_algorithm = self.hash_algorithm.split('\0', 1)[0]
+      o = 0
+      self.partition_name = str(data[(self.SIZE + o):(self.SIZE + o +
+                                                      partition_name_len)])
+      # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
+      self.partition_name.decode('utf-8')
+      o += partition_name_len
+      self.salt = data[(self.SIZE + o):(self.SIZE + o + salt_len)]
+      o += salt_len
+      self.digest = data[(self.SIZE + o):(self.SIZE + o + digest_len)]
+      if digest_len != len(hashlib.new(name=self.hash_algorithm).digest()):
+        raise LookupError('digest_len doesn\'t match hash algorithm')
+
+    else:
+      self.image_size = 0
+      self.hash_algorithm = ''
+      self.partition_name = ''
+      self.salt = bytearray()
+      self.digest = bytearray()
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('    Hash descriptor:\n')
+    o.write('      Image Size:            {} bytes\n'.format(self.image_size))
+    o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
+    o.write('      Partition Name:        {}\n'.format(self.partition_name))
+    o.write('      Salt:                  {}\n'.format(str(self.salt).encode(
+        'hex')))
+    o.write('      Digest:                {}\n'.format(str(self.digest).encode(
+        'hex')))
+
+  def encode(self):
+    """Serializes the descriptor.
+
+    Returns:
+      A bytearray() with the descriptor data.
+    """
+    encoded_name = self.partition_name.encode('utf-8')
+    num_bytes_following = (
+        self.SIZE + len(encoded_name) + len(self.salt) + len(self.digest) - 16)
+    nbf_with_padding = round_to_multiple(num_bytes_following, 8)
+    padding_size = nbf_with_padding - num_bytes_following
+    desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
+                       self.image_size, self.hash_algorithm, len(encoded_name),
+                       len(self.salt), len(self.digest))
+    padding = struct.pack(str(padding_size) + 'x')
+    ret = desc + encoded_name + self.salt + self.digest + padding
+    return bytearray(ret)
+
+
+class AvbKernelCmdlineDescriptor(AvbDescriptor):
+  """A class for kernel command-line descriptors.
+
+  See the |AvbKernelCmdlineDescriptor| C struct for more information.
+
+  Attributes:
+    kernel_cmdline: The kernel command-line.
+  """
+
+  TAG = 3
+  SIZE = 20
+  FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
+                   'L')  # cmdline length (bytes)
+
+  def __init__(self, data=None):
+    """Initializes a new kernel cmdline descriptor.
+
+    Arguments:
+      data: If not None, must be a bytearray of size |SIZE|.
+
+    Raises:
+      LookupError: If the given descriptor is malformed.
+    """
+    AvbDescriptor.__init__(self, None)
+    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
+
+    if data:
+      (tag, num_bytes_following, kernel_cmdline_length) = (
+          struct.unpack(self.FORMAT_STRING, data[0:self.SIZE]))
+      expected_size = round_to_multiple(self.SIZE - 16 + kernel_cmdline_length,
+                                        8)
+      if tag != self.TAG or num_bytes_following != expected_size:
+        raise LookupError('Given data does not look like a kernel cmdline '
+                          'descriptor.')
+      # Nuke NUL-bytes at the end.
+      self.kernel_cmdline = str(data[self.SIZE:(self.SIZE +
+                                                kernel_cmdline_length)])
+      # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
+      self.kernel_cmdline.decode('utf-8')
+    else:
+      self.kernel_cmdline = ''
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('    Kernel Cmdline descriptor:\n')
+    o.write('      Kernel Cmdline:        {}\n'.format(repr(
+        self.kernel_cmdline)))
+
+  def encode(self):
+    """Serializes the descriptor.
+
+    Returns:
+      A bytearray() with the descriptor data.
+    """
+    encoded_str = self.kernel_cmdline.encode('utf-8')
+    num_bytes_following = (self.SIZE + len(encoded_str) - 16)
+    nbf_with_padding = round_to_multiple(num_bytes_following, 8)
+    padding_size = nbf_with_padding - num_bytes_following
+    desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
+                       len(encoded_str))
+    padding = struct.pack(str(padding_size) + 'x')
+    ret = desc + encoded_str + padding
+    return bytearray(ret)
+
+
+class AvbChainPartitionDescriptor(AvbDescriptor):
+  """A class for chained partition descriptors.
+
+  See the |AvbChainPartitionDescriptor| C struct for more information.
+
+  Attributes:
+    rollback_index_slot: The rollback index slot to use.
+    partition_name: Partition name.
+    public_key: Bytes for the public key.
+  """
+
+  TAG = 4
+  SIZE = 28
+  FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
+                   'L'  # rollback_index_slot
+                   'L'  # partition_name_size (bytes)
+                   'L')  # public_key_size (bytes)
+
+  def __init__(self, data=None):
+    """Initializes a new chain partition descriptor.
+
+    Arguments:
+      data: If not None, must be a bytearray of size |SIZE|.
+
+    Raises:
+      LookupError: If the given descriptor is malformed.
+    """
+    AvbDescriptor.__init__(self, None)
+    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
+
+    if data:
+      (tag, num_bytes_following, self.rollback_index_slot, partition_name_len,
+       public_key_len) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
+      expected_size = round_to_multiple(
+          self.SIZE - 16 + partition_name_len + public_key_len, 8)
+      if tag != self.TAG or num_bytes_following != expected_size:
+        raise LookupError('Given data does not look like a chain partition '
+                          'descriptor.')
+      o = 0
+      self.partition_name = str(data[(self.SIZE + o):(self.SIZE + o +
+                                                      partition_name_len)])
+      # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
+      self.partition_name.decode('utf-8')
+      o += partition_name_len
+      self.public_key = data[(self.SIZE + o):(self.SIZE + o + public_key_len)]
+
+    else:
+      self.rollback_index_slot = 0
+      self.partition_name = ''
+      self.public_key = bytearray()
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('    Chain Partition descriptor:\n')
+    o.write('      Partition Name:        {}\n'.format(self.partition_name))
+    o.write('      Rollback Index Slot:   {}\n'.format(
+        self.rollback_index_slot))
+    # Just show the SHA1 of the key, for size reasons.
+    hexdig = hashlib.sha1(self.public_key).hexdigest()
+    o.write('      Public key (sha1):     {}\n'.format(hexdig))
+
+  def encode(self):
+    """Serializes the descriptor.
+
+    Returns:
+      A bytearray() with the descriptor data.
+    """
+    encoded_name = self.partition_name.encode('utf-8')
+    num_bytes_following = (
+        self.SIZE + len(encoded_name) + len(self.public_key) - 16)
+    nbf_with_padding = round_to_multiple(num_bytes_following, 8)
+    padding_size = nbf_with_padding - num_bytes_following
+    desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
+                       self.rollback_index_slot, len(encoded_name),
+                       len(self.public_key))
+    padding = struct.pack(str(padding_size) + 'x')
+    ret = desc + encoded_name + self.public_key + padding
+    return bytearray(ret)
+
+
+DESCRIPTOR_CLASSES = [
+    AvbPropertyDescriptor, AvbHashtreeDescriptor, AvbHashDescriptor,
+    AvbKernelCmdlineDescriptor, AvbChainPartitionDescriptor
+]
+
+
+def parse_descriptors(data):
+  """Parses a blob of data into descriptors.
+
+  Arguments:
+    data: A bytearray() with encoded descriptors.
+
+  Returns:
+    A list of instances of objects derived from AvbDescriptor. For
+    unknown descriptors, the class AvbDescriptor is used.
+  """
+  o = 0
+  ret = []
+  while o < len(data):
+    tag, nb_following = struct.unpack('!2Q', data[o:o + 16])
+    if tag < len(DESCRIPTOR_CLASSES):
+      c = DESCRIPTOR_CLASSES[tag]
+    else:
+      c = AvbDescriptor
+    ret.append(c(bytearray(data[o:o + 16 + nb_following])))
+    o += 16 + nb_following
+  return ret
+
+
+class AvbFooter(object):
+  """A class for parsing and writing footers.
+
+  Footers are stored at the end of partitions and point to where the
+  AvbVBMeta blob is located. They also contain the original size of
+  the image before AVB information was added.
+
+  Attributes:
+    magic: Magic for identifying the footer, see |MAGIC|.
+    version_major: The major version of avbtool that wrote the footer.
+    version_minor: The minor version of avbtool that wrote the footer.
+    original_image_size: Original image size.
+    vbmeta_offset: Offset of where the AvbVBMeta blob is stored.
+    vbmeta_size: Size of the AvbVBMeta blob.
+  """
+
+  MAGIC = 'AVBf'
+  SIZE = 64
+  RESERVED = 28
+  FORMAT_STRING = ('!4s2L'  # magic, 2 x version.
+                   'Q'  # Original image size.
+                   'Q'  # Offset of VBMeta blob.
+                   'Q' +  # Size of VBMeta blob.
+                   str(RESERVED) + 'x')  # padding for reserved bytes
+
+  def __init__(self, data=None):
+    """Initializes a new footer object.
+
+    Arguments:
+      data: If not None, must be a bytearray of size 4096.
+
+    Raises:
+      LookupError: If the given footer is malformed.
+      struct.error: If the given data has no footer.
+    """
+    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
+
+    if data:
+      (self.magic, self.version_major, self.version_minor,
+       self.original_image_size, self.vbmeta_offset,
+       self.vbmeta_size) = struct.unpack(self.FORMAT_STRING, data)
+      if self.magic != self.MAGIC:
+        raise LookupError('Given data does not look like a Brillo  footer.')
+    else:
+      self.magic = self.MAGIC
+      self.version_major = AVB_VERSION_MAJOR
+      self.version_minor = AVB_VERSION_MINOR
+      self.original_image_size = 0
+      self.vbmeta_offset = 0
+      self.vbmeta_size = 0
+
+  def save(self, output):
+    """Serializes the footer to disk.
+
+    Arguments:
+      output: The object to write the output to.
+    """
+    output.write(struct.pack(self.FORMAT_STRING, self.magic, self.version_major,
+                             self.version_minor, self.original_image_size,
+                             self.vbmeta_offset, self.vbmeta_size))
+
+
+class AvbVBMetaHeader(object):
+  """A class for parsing and writing Brillo Verified Boot vbmeta images.
+
+  Attributes:
+    The attributes correspond to the |AvbVBMetaHeader| struct
+    defined in avb_vbmeta_header.h.
+  """
+
+  SIZE = 256
+
+  # Keep in sync with |reserved| field of |AvbVBMetaImageHeader|.
+  RESERVED = 152
+
+  # Keep in sync with |AvbVBMetaImageHeader|.
+  FORMAT_STRING = ('!4s2L'  # magic, 2 x version
+                   '2Q'  # 2 x block size
+                   'L'  # algorithm type
+                   '2Q'  # offset, size (hash)
+                   '2Q'  # offset, size (signature)
+                   '2Q'  # offset, size (public key)
+                   '2Q'  # offset, size (descriptors)
+                   'Q' +  # rollback_index
+                   str(RESERVED) + 'x')  # padding for reserved bytes
+
+  def __init__(self, data=None):
+    """Initializes a new header object.
+
+    Arguments:
+      data: If not None, must be a bytearray of size 8192.
+
+    Raises:
+      Exception: If the given data is malformed.
+    """
+    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
+
+    if data:
+      (self.magic, self.header_version_major, self.header_version_minor,
+       self.authentication_data_block_size, self.auxiliary_data_block_size,
+       self.algorithm_type, self.hash_offset, self.hash_size,
+       self.signature_offset, self.signature_size, self.public_key_offset,
+       self.public_key_size, self.descriptors_offset, self.descriptors_size,
+       self.rollback_index) = struct.unpack(self.FORMAT_STRING, data)
+      # Nuke NUL-bytes at the end of the string.
+      if self.magic != 'AVB0':
+        raise AvbError('Given image does not look like a Brillo boot image')
+    else:
+      self.magic = 'AVB0'
+      self.header_version_major = AVB_VERSION_MAJOR
+      self.header_version_minor = AVB_VERSION_MINOR
+      self.authentication_data_block_size = 0
+      self.auxiliary_data_block_size = 0
+      self.algorithm_type = 0
+      self.hash_offset = 0
+      self.hash_size = 0
+      self.signature_offset = 0
+      self.signature_size = 0
+      self.public_key_offset = 0
+      self.public_key_size = 0
+      self.descriptors_offset = 0
+      self.descriptors_size = 0
+      self.rollback_index = 0
+
+  def save(self, output):
+    """Serializes the header (256 bytes) to disk.
+
+    Arguments:
+      output: The object to write the output to.
+    """
+    output.write(struct.pack(
+        self.FORMAT_STRING, self.magic, self.header_version_major,
+        self.header_version_minor, self.authentication_data_block_size,
+        self.auxiliary_data_block_size, self.algorithm_type, self.hash_offset,
+        self.hash_size, self.signature_offset, self.signature_size,
+        self.public_key_offset, self.public_key_size, self.descriptors_offset,
+        self.descriptors_size, self.rollback_index))
+
+  def encode(self):
+    """Serializes the header (256) to a bytearray().
+
+    Returns:
+      A bytearray() with the encoded header.
+    """
+    return struct.pack(self.FORMAT_STRING, self.magic,
+                       self.header_version_major, self.header_version_minor,
+                       self.authentication_data_block_size,
+                       self.auxiliary_data_block_size, self.algorithm_type,
+                       self.hash_offset, self.hash_size, self.signature_offset,
+                       self.signature_size, self.public_key_offset,
+                       self.public_key_size, self.descriptors_offset,
+                       self.descriptors_size, self.rollback_index)
+
+
+class Avb(object):
+  """Business logic for avbtool command-line tool."""
+
+  def erase_footer(self, image, keep_hashtree):
+    """Implements the 'erase_footer' command.
+
+    Arguments:
+      image: File to erase a footer from.
+      keep_hashtree: If True, keep the hashtree around.
+
+    Raises:
+      AvbError: If there's no footer in the image.
+    """
+
+    (footer, _, descriptors, _) = self._parse_image(image)
+
+    if not footer:
+      raise AvbError('Given image does not have a footer.')
+
+    new_image_size = None
+    if not keep_hashtree:
+      new_image_size = footer.original_image_size
+    else:
+      # If requested to keep the hashtree, search for a hashtree
+      # descriptor to figure out the location and size of the hashtree.
+      for desc in descriptors:
+        if isinstance(desc, AvbHashtreeDescriptor):
+          # The hashtree is always just following the main data so the
+          # new size is easily derived.
+          new_image_size = desc.tree_offset + desc.tree_size
+          break
+      if not new_image_size:
+        raise AvbError('Requested to keep hashtree but no hashtree '
+                       'descriptor was found.')
+
+    # And cut...
+    image.truncate(new_image_size)
+
+  def info_image(self, image, output):
+    """Implements the 'info_image' command.
+
+    Arguments:
+      image: Image file to get information from (file object).
+      output: Output file to write human-readable information to (file object).
+    """
+
+    o = output
+
+    (footer, header, descriptors, image_size) = self._parse_image(image)
+
+    if footer:
+      o.write('Footer version:           {}.{}\n'.format(footer.version_major,
+                                                         footer.version_minor))
+      o.write('Image size:               {} bytes\n'.format(image_size))
+      o.write('Original image size:      {} bytes\n'.format(
+          footer.original_image_size))
+      o.write('VBMeta offset:            {}\n'.format(footer.vbmeta_offset))
+      o.write('VBMeta size:              {} bytes\n'.format(footer.vbmeta_size))
+      o.write('--\n')
+
+    (alg_name, _) = lookup_algorithm_by_type(header.algorithm_type)
+
+    o.write('VBMeta image version:     {}.{}\n'.format(
+        header.header_version_major, header.header_version_minor))
+    o.write('Header Block:             {} bytes\n'.format(AvbVBMetaHeader.SIZE))
+    o.write('Authentication Block:     {} bytes\n'.format(
+        header.authentication_data_block_size))
+    o.write('Auxiliary Block:          {} bytes\n'.format(
+        header.auxiliary_data_block_size))
+    o.write('Algorithm:                {}\n'.format(alg_name))
+    o.write('Rollback Index:           {}\n'.format(header.rollback_index))
+
+    # Print descriptors.
+    num_printed = 0
+    o.write('Descriptors:\n')
+    for desc in descriptors:
+      desc.print_desc(o)
+      num_printed += 1
+    if num_printed == 0:
+      o.write('    (none)\n')
+
+  def _parse_image(self, image):
+    """Gets information about an image.
+
+    The image can either be a vbmeta or an image with a footer.
+
+    Arguments:
+      image: An image (vbmeta or footer) with a hashtree descriptor.
+
+    Returns:
+      A tuple where the first argument is a AvbFooter (None if there
+      is no footer on the image), the second argument is a
+      AvbVBMetaHeader, the third argument is a list of
+      AvbDescriptor-derived instances, and the fourth argument is the
+      size of |image|.
+    """
+    footer = None
+    image.seek(0, os.SEEK_END)
+    image_size = image.tell()
+    image.seek(image_size - AvbFooter.SIZE)
+    try:
+      footer = AvbFooter(image.read(AvbFooter.SIZE))
+    except (LookupError, struct.error):
+      # Nope, just seek back to the start.
+      image.seek(0)
+
+    vbmeta_offset = 0
+    if footer:
+      vbmeta_offset = footer.vbmeta_offset
+
+    image.seek(vbmeta_offset)
+    h = AvbVBMetaHeader(image.read(AvbVBMetaHeader.SIZE))
+
+    auth_block_offset = vbmeta_offset + AvbVBMetaHeader.SIZE
+    aux_block_offset = auth_block_offset + h.authentication_data_block_size
+    desc_start_offset = aux_block_offset + h.descriptors_offset
+    image.seek(desc_start_offset)
+    descriptors = parse_descriptors(image.read(h.descriptors_size))
+
+    return footer, h, descriptors, image_size
+
+  def _get_cmdline_descriptor_for_dm_verity(self, image):
+    """Generate kernel cmdline descriptor for dm-verity.
+
+    Arguments:
+      image: An image (vbmeta or footer) with a hashtree descriptor.
+
+    Returns:
+      A AvbKernelCmdlineDescriptor with dm-verity kernel cmdline
+      instructions for the hashtree.
+
+    Raises:
+      AvbError: If  |image| doesn't have a hashtree descriptor.
+
+    """
+
+    (_, _, descriptors, _) = self._parse_image(image)
+
+    ht = None
+    for desc in descriptors:
+      if isinstance(desc, AvbHashtreeDescriptor):
+        ht = desc
+        break
+
+    if not ht:
+      raise AvbError('No hashtree descriptor in given image')
+
+    c = 'dm="1 vroot none ro 1,'
+    c += '0 '  # start
+    c += '{} '.format((ht.image_size / 512))  # size (# sectors)
+    c += 'verity {} '.format(ht.dm_verity_version)  # type and version
+    c += 'PARTUUID=$(ANDROID_SYSTEM_PARTUUID) '  # data_dev
+    c += 'PARTUUID=$(ANDROID_SYSTEM_PARTUUID) '  # hash_dev
+    c += '{} '.format(ht.data_block_size)  # data_block
+    c += '{} '.format(ht.hash_block_size)  # hash_block
+    c += '{} '.format(ht.image_size / ht.data_block_size)  # #blocks
+    c += '{} '.format(ht.image_size / ht.data_block_size)  # hash_offset
+    c += '{} '.format(ht.hash_algorithm)  # hash_alg
+    c += '{} '.format(str(ht.root_digest).encode('hex'))  # root_digest
+    c += '{}'.format(str(ht.salt).encode('hex'))  # salt
+    c += '"'
+
+    desc = AvbKernelCmdlineDescriptor()
+    desc.kernel_cmdline = c
+    return desc
+
+  def make_vbmeta_image(self, output, chain_partitions, algorithm_name,
+                        key_path, rollback_index, props, props_from_file,
+                        kernel_cmdlines,
+                        generate_dm_verity_cmdline_from_hashtree,
+                        include_descriptors_from_image):
+    """Implements the 'make_vbmeta_image' command.
+
+    Arguments:
+      output: File to write the image to.
+      chain_partitions: List of partitions to chain.
+      algorithm_name: Name of algorithm to use.
+      key_path: Path to key to use or None.
+      rollback_index: The rollback index to use.
+      props: Properties to insert (list of strings of the form 'key:value').
+      props_from_file: Properties to insert (list of strings 'key:<path>').
+      kernel_cmdlines: Kernel cmdlines to insert (list of strings).
+      generate_dm_verity_cmdline_from_hashtree: None or file to generate from.
+      include_descriptors_from_image: List of file objects with descriptors.
+
+    Raises:
+      AvbError: If a chained partition is malformed.
+    """
+
+    descriptors = []
+
+    # Insert chained partition descriptors.
+    if chain_partitions:
+      for cp in chain_partitions:
+        cp_tokens = cp.split(':')
+        if len(cp_tokens) != 3:
+          raise AvbError('Malformed chained partition "{}".'.format(cp))
+        desc = AvbChainPartitionDescriptor()
+        desc.partition_name = cp_tokens[0]
+        desc.rollback_index_slot = int(cp_tokens[1])
+        if desc.rollback_index_slot < 1:
+          raise AvbError('Rollback index slot must be 1 or larger.')
+        file_path = cp_tokens[2]
+        desc.public_key = open(file_path, 'rb').read()
+        descriptors.append(desc)
+
+    vbmeta_blob = self._generate_vbmeta_blob(
+        algorithm_name, key_path, descriptors, rollback_index, props,
+        props_from_file, kernel_cmdlines,
+        generate_dm_verity_cmdline_from_hashtree,
+        include_descriptors_from_image)
+
+    # Write entire vbmeta blob (header, authentication, auxiliary).
+    output.seek(0)
+    output.write(vbmeta_blob)
+
+  def _generate_vbmeta_blob(self, algorithm_name, key_path, descriptors,
+                            rollback_index, props, props_from_file,
+                            kernel_cmdlines,
+                            generate_dm_verity_cmdline_from_hashtree,
+                            include_descriptors_from_image):
+    """Generates a VBMeta blob.
+
+    This blob contains the header (struct AvbVBMetaHeader), the
+    authentication data block (which contains the hash and signature
+    for the header and auxiliary block), and the auxiliary block
+    (which contains descriptors, the public key used, and other data).
+
+    The |key| parameter can |None| only if the |algorithm_name| is
+    'NONE'.
+
+    Arguments:
+      algorithm_name: The algorithm name as per the ALGORITHMS dict.
+      key_path: The path to the .pem file used to sign the blob.
+      descriptors: A list of descriptors to insert or None.
+      rollback_index: The rollback index to use.
+      props: Properties to insert (List of strings of the form 'key:value').
+      props_from_file: Properties to insert (List of strings 'key:<path>').
+      kernel_cmdlines: Kernel cmdlines to insert (list of strings).
+      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+        dm-verity kernel cmdline from.
+      include_descriptors_from_image: List of file objects for which
+        to insert descriptors from.
+
+    Returns:
+      A bytearray() with the VBMeta blob.
+
+    Raises:
+      Exception: If the |algorithm_name| is not found, if no key has
+        been given and the given algorithm requires one, or the key is
+        of the wrong size.
+
+    """
+    try:
+      alg = ALGORITHMS[algorithm_name]
+    except KeyError:
+      raise AvbError('Unknown algorithm with name {}'.format(algorithm_name))
+
+    # Descriptors.
+    encoded_descriptors = bytearray()
+    if descriptors:
+      for desc in descriptors:
+        encoded_descriptors.extend(desc.encode())
+
+    # Add properties.
+    if props:
+      for prop in props:
+        idx = prop.find(':')
+        if idx == -1:
+          raise AvbError('Malformed property "{}".'.format(prop))
+        desc = AvbPropertyDescriptor()
+        desc.key = prop[0:idx]
+        desc.value = prop[(idx + 1):]
+        encoded_descriptors.extend(desc.encode())
+    if props_from_file:
+      for prop in props_from_file:
+        idx = prop.find(':')
+        if idx == -1:
+          raise AvbError('Malformed property "{}".'.format(prop))
+        desc = AvbPropertyDescriptor()
+        desc.key = prop[0:idx]
+        desc.value = prop[(idx + 1):]
+        file_path = prop[(idx + 1):]
+        desc.value = open(file_path, 'rb').read()
+        encoded_descriptors.extend(desc.encode())
+
+    # Add AvbKernelCmdline descriptor for dm-verity, if requested.
+    if generate_dm_verity_cmdline_from_hashtree:
+      encoded_descriptors.extend(self._get_cmdline_descriptor_for_dm_verity(
+          generate_dm_verity_cmdline_from_hashtree).encode())
+
+    # Add kernel command-lines.
+    if kernel_cmdlines:
+      for i in kernel_cmdlines:
+        desc = AvbKernelCmdlineDescriptor()
+        desc.kernel_cmdline = i
+        encoded_descriptors.extend(desc.encode())
+
+    # Add descriptors from other images.
+    if include_descriptors_from_image:
+      for image in include_descriptors_from_image:
+        (_, _, image_descriptors, _) = self._parse_image(image)
+        for desc in image_descriptors:
+          encoded_descriptors.extend(desc.encode())
+
+    key = None
+    encoded_key = bytearray()
+    if alg.public_key_num_bytes > 0:
+      if not key_path:
+        raise AvbError('Key is required for algorithm {}'.format(
+            algorithm_name))
+      key = Crypto.PublicKey.RSA.importKey(open(key_path).read())
+      encoded_key = encode_rsa_key(key)
+      if len(encoded_key) != alg.public_key_num_bytes:
+        raise AvbError('Key is wrong size for algorithm {}'.format(
+            algorithm_name))
+
+    h = AvbVBMetaHeader()
+
+    # For the Auxiliary data block, descriptors are stored at offset 0
+    # and the public key is immediately after that.
+    h.auxiliary_data_block_size = round_to_multiple(
+        len(encoded_descriptors) + len(encoded_key), 64)
+    h.descriptors_offset = 0
+    h.descriptors_size = len(encoded_descriptors)
+    h.public_key_offset = h.descriptors_size
+    h.public_key_size = len(encoded_key)
+
+    # For the Authentication data block, the hash is first and then
+    # the signature.
+    h.authentication_data_block_size = round_to_multiple(
+        alg.hash_num_bytes + alg.public_key_num_bytes, 64)
+    h.algorithm_type = alg.algorithm_type
+    h.hash_offset = 0
+    h.hash_size = alg.hash_num_bytes
+    # Signature offset and size - it's stored right after the hash
+    # (in Authentication data block).
+    h.signature_offset = alg.hash_num_bytes
+    h.signature_size = alg.signature_num_bytes
+
+    h.rollback_index = rollback_index
+
+    # Generate Header data block.
+    header_data_blob = h.encode()
+
+    # Generate Auxiliary data block.
+    aux_data_blob = bytearray()
+    aux_data_blob.extend(encoded_descriptors)
+    aux_data_blob.extend(encoded_key)
+    padding_bytes = h.auxiliary_data_block_size - len(aux_data_blob)
+    aux_data_blob.extend('\0' * padding_bytes)
+
+    # Calculate the hash.
+    binary_hash = bytearray()
+    binary_signature = bytearray()
+    if algorithm_name != 'NONE':
+      if algorithm_name[0:6] == 'SHA256':
+        ha = hashlib.sha256()
+      elif algorithm_name[0:6] == 'SHA512':
+        ha = hashlib.sha512()
+      else:
+        raise AvbError('Unsupported algorithm {}.'.format(algorithm_name))
+      ha.update(header_data_blob)
+      ha.update(aux_data_blob)
+      binary_hash.extend(ha.digest())
+
+      # Calculate the signature.
+      p = subprocess.Popen(
+          ['openssl', 'rsautl', '-sign', '-inkey', key_path, '-raw'],
+          stdin=subprocess.PIPE,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.PIPE)
+      padding_and_hash = str(bytearray(alg.padding)) + binary_hash
+      (pout, perr) = p.communicate(padding_and_hash)
+      retcode = p.wait()
+      if retcode != 0:
+        raise AvbError('Error signing: {}'.format(perr))
+      binary_signature.extend(pout)
+
+    # Generate Authentication data block.
+    auth_data_blob = bytearray()
+    auth_data_blob.extend(binary_hash)
+    auth_data_blob.extend(binary_signature)
+    padding_bytes = h.authentication_data_block_size - len(auth_data_blob)
+    auth_data_blob.extend('\0' * padding_bytes)
+
+    return header_data_blob + auth_data_blob + aux_data_blob
+
+  def extract_public_key(self, key_path, output):
+    """Implements the 'extract_public_key' command.
+
+    Arguments:
+      key_path: The path to a RSA private key file.
+      output: The file to write to.
+    """
+    key = Crypto.PublicKey.RSA.importKey(open(key_path).read())
+    write_rsa_key(output, key)
+
+  def add_hash_footer(self, image, partition_size, partition_name,
+                      hash_algorithm, salt, algorithm_name, key_path,
+                      rollback_index, props, props_from_file, kernel_cmdlines,
+                      generate_dm_verity_cmdline_from_hashtree,
+                      include_descriptors_from_image):
+    """Implements the 'add_hash_footer' command.
+
+    Arguments:
+      image: File to add the footer to.
+      partition_size: Size of partition.
+      partition_name: Name of partition (without A/B suffix).
+      hash_algorithm: Hash algorithm to use.
+      salt: Salt to use as a hexadecimal string or None to use /dev/urandom.
+      algorithm_name: Name of algorithm to use.
+      key_path: Path to key to use or None.
+      rollback_index: Rollback index.
+      props: Properties to insert (List of strings of the form 'key:value').
+      props_from_file: Properties to insert (List of strings 'key:<path>').
+      kernel_cmdlines: Kernel cmdlines to insert (list of strings).
+      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+        dm-verity kernel cmdline from.
+      include_descriptors_from_image: List of file objects for which
+        to insert descriptors from.
+    """
+    # If there's already a footer, truncate the image to its original
+    # size. This way 'avbtool add_hash_footer' is idempotent (modulo
+    # salts).
+    image.seek(0, os.SEEK_END)
+    image_size = image.tell()
+    image.seek(image_size - AvbFooter.SIZE)
+    try:
+      footer = AvbFooter(image.read(AvbFooter.SIZE))
+      # Existing footer found. Just truncate.
+      original_image_size = footer.original_image_size
+      image_size = footer.original_image_size
+      image.truncate(image_size)
+    except (LookupError, struct.error):
+      original_image_size = image_size
+
+    # If anything goes wrong from here-on, restore the image back to
+    # its original size.
+    try:
+      digest_size = len(hashlib.new(name=hash_algorithm).digest())
+      if salt:
+        salt = salt.decode('hex')
+      else:
+        if salt is None:
+          # If salt is not explicitly specified, choose a hash
+          # that's the same size as the hash size.
+          hash_size = digest_size
+          salt = open('/dev/urandom').read(hash_size)
+        else:
+          salt = ''
+
+      hasher = hashlib.new(name=hash_algorithm, string=salt)
+      # TODO(zeuthen): might want to read this in chunks to avoid
+      # memory pressure, then again, this is only supposed to be used
+      # on kernel/initramfs partitions. Possible optimization.
+      image.seek(0)
+      hasher.update(image.read(image_size))
+      digest = hasher.digest()
+
+      h_desc = AvbHashDescriptor()
+      h_desc.image_size = image_size
+      h_desc.hash_algorithm = hash_algorithm
+      h_desc.partition_name = partition_name
+      h_desc.salt = salt
+      h_desc.digest = digest
+
+      # Generate the VBMeta footer.
+      vbmeta_offset = image_size
+      vbmeta_blob = self._generate_vbmeta_blob(
+          algorithm_name, key_path, [h_desc], rollback_index, props,
+          props_from_file, kernel_cmdlines,
+          generate_dm_verity_cmdline_from_hashtree,
+          include_descriptors_from_image)
+
+      image.seek(vbmeta_offset)
+      image.write(vbmeta_blob)
+
+      # Check that |partition_size| is going to be big enough
+      footer_offset = partition_size - AvbFooter.SIZE
+      if image.tell() > footer_offset:
+        raise AvbError('Partition size of {} is {} bytes too small.'.format(
+            partition_size, image.tell() - footer_offset))
+
+      # Generate the Footer that tells where the VBMeta footer is.
+      footer = AvbFooter()
+      footer.original_image_size = original_image_size
+      footer.vbmeta_offset = vbmeta_offset
+      footer.vbmeta_size = len(vbmeta_blob)
+      image.seek(footer_offset)
+      footer.save(image)
+    except:
+      # Truncate back to original size, then re-raise
+      image.truncate(original_image_size)
+      raise
+
+  def add_hashtree_footer(self, image, partition_size, partition_name,
+                          hash_algorithm, block_size, salt, algorithm_name,
+                          key_path, rollback_index, props, props_from_file,
+                          kernel_cmdlines,
+                          generate_dm_verity_cmdline_from_hashtree,
+                          include_descriptors_from_image):
+    """Implements the 'add_hashtree_footer' command.
+
+    See https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity for
+    more information about dm-verity and these hashes.
+
+    Arguments:
+      image: File to add the footer to.
+      partition_size: Size of partition.
+      partition_name: Name of partition (without A/B suffix).
+      hash_algorithm: Hash algorithm to use.
+      block_size: Block size to use.
+      salt: Salt to use as a hexadecimal string or None to use /dev/urandom.
+      algorithm_name: Name of algorithm to use.
+      key_path: Path to key to use or None.
+      rollback_index: Rollback index.
+      props: Properties to insert (List of strings of the form 'key:value').
+      props_from_file: Properties to insert (List of strings 'key:<path>').
+      kernel_cmdlines: Kernel cmdlines to insert (list of strings).
+      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+        dm-verity kernel cmdline from.
+      include_descriptors_from_image: List of file objects for which
+        to insert descriptors from.
+    """
+    # If there's already a footer, truncate the image to its original
+    # size. This way 'avbtool add_hashtree_footer' is idempotent
+    # (modulo salts).
+    image.seek(0, os.SEEK_END)
+    image_size = image.tell()
+    image.seek(image_size - AvbFooter.SIZE)
+    try:
+      footer = AvbFooter(image.read(AvbFooter.SIZE))
+      # Existing footer found. Just truncate.
+      original_image_size = footer.original_image_size
+      image_size = footer.original_image_size
+      image.truncate(image_size)
+    except (LookupError, struct.error):
+      original_image_size = image_size
+
+    # If anything goes wrong from here-on, restore the image back to
+    # its original size.
+    try:
+      # Ensure image is multiple of block_size.
+      rounded_image_size = round_to_multiple(image_size, block_size)
+      if rounded_image_size > image_size:
+        image.write('\0' * (rounded_image_size - image_size))
+        image_size = rounded_image_size
+
+      tree_offset = image_size
+
+      digest_size = len(hashlib.new(name=hash_algorithm).digest())
+      digest_padding = round_to_pow2(digest_size) - digest_size
+
+      if salt:
+        salt = salt.decode('hex')
+      else:
+        if salt is None:
+          # If salt is not explicitly specified, choose a hash
+          # that's the same size as the hash size.
+          hash_size = digest_size
+          salt = open('/dev/urandom').read(hash_size)
+        else:
+          salt = ''
+
+      # Hashes are stored upside down so we need to calcuate hash
+      # offsets in advance.
+      (hash_level_offsets, tree_size) = calc_hash_level_offsets(
+          image_size, block_size, digest_size + digest_padding)
+
+      # Make room for the tree.
+      image.truncate(image_size + tree_size)
+
+      # Generate the tree.
+      root_digest = generate_hash_tree(image, image_size, block_size,
+                                       hash_algorithm, salt, digest_padding,
+                                       tree_offset, hash_level_offsets)
+
+      ht_desc = AvbHashtreeDescriptor()
+      ht_desc.dm_verity_version = 1
+      ht_desc.image_size = image_size
+      ht_desc.tree_offset = tree_offset
+      ht_desc.tree_size = tree_size
+      ht_desc.data_block_size = block_size
+      ht_desc.hash_block_size = block_size
+      ht_desc.hash_algorithm = hash_algorithm
+      ht_desc.partition_name = partition_name
+      ht_desc.salt = salt
+      ht_desc.root_digest = root_digest
+
+      # Generate the VBMeta footer.
+      vbmeta_offset = tree_offset + tree_size
+      vbmeta_blob = self._generate_vbmeta_blob(
+          algorithm_name, key_path, [ht_desc], rollback_index, props,
+          props_from_file, kernel_cmdlines,
+          generate_dm_verity_cmdline_from_hashtree,
+          include_descriptors_from_image)
+      image.seek(vbmeta_offset)
+      image.write(vbmeta_blob)
+
+      # Check that |partition_size| is going to be big enough
+      footer_offset = partition_size - AvbFooter.SIZE
+      if image.tell() > footer_offset:
+        raise AvbError('Partition size of {} is {} bytes too small.'.format(
+            partition_size, image.tell() - footer_offset))
+
+      # Generate the Footer that tells where the VBMeta footer is.
+      footer = AvbFooter()
+      footer.original_image_size = original_image_size
+      footer.vbmeta_offset = vbmeta_offset
+      footer.vbmeta_size = len(vbmeta_blob)
+      image.seek(footer_offset)
+      footer.save(image)
+    except:
+      # Truncate back to original size, then re-raise
+      image.truncate(original_image_size)
+      raise
+
+
+def calc_hash_level_offsets(image_size, block_size, digest_size):
+  """Calculate the offsets of all the hash-levels in a Merkle-tree.
+
+  Arguments:
+    image_size: The size of the image to calculate a Merkle-tree for.
+    block_size: The block size, e.g. 4096.
+    digest_size: The size of each hash, e.g. 32 for SHA-256.
+
+  Returns:
+    A tuple where the first argument is an array of offsets and the
+    second is size of the tree, in bytes.
+  """
+  level_offsets = []
+  level_sizes = []
+  tree_size = 0
+
+  num_levels = 0
+  size = image_size
+  while size > block_size:
+    num_blocks = (size + block_size - 1) / block_size
+    level_size = round_to_multiple(num_blocks * digest_size, block_size)
+
+    level_sizes.append(level_size)
+    tree_size += level_size
+    num_levels += 1
+
+    size = level_size
+
+  for n in range(0, num_levels):
+    offset = 0
+    for m in range(n + 1, num_levels):
+      offset += level_sizes[m]
+    level_offsets.append(offset)
+
+  return (level_offsets, tree_size)
+
+
+def generate_hash_tree(image, image_size, block_size, hash_alg_name, salt,
+                       digest_padding, tree_offset, hash_level_offsets):
+  """Generates a Merkle-tree for a file.
+
+  Args:
+    image: The image, as a file.
+    image_size: The size of the image.
+    block_size: The block size, e.g. 4096.
+    hash_alg_name: The hash algorithm, e.g. 'sha256' or 'sha1'.
+    salt: The salt to use.
+    digest_padding: The padding for each digest.
+    tree_offset: The offset of where to store the Merkle tree in |image|.
+    hash_level_offsets: The offsets from calc_hash_level_offsets().
+
+  Returns:
+    The top-level hash.
+  """
+  hash_src_offset = 0
+  hash_src_size = image_size
+  level_num = 0
+  while hash_src_size > block_size:
+    level_output = ''
+    image.seek(hash_src_offset)
+    remaining = hash_src_size
+    while remaining > 0:
+      hasher = hashlib.new(name=hash_alg_name, string=salt)
+      data = image.read(min(remaining, block_size))
+      assert data
+      remaining -= len(data)
+      hasher.update(data)
+      if len(data) < block_size:
+        hasher.update('\0' * (block_size - len(data)))
+      level_output += hasher.digest()
+      if digest_padding > 0:
+        level_output += '\0' * digest_padding
+
+    padding_needed = (round_to_multiple(
+        len(level_output), block_size) - len(level_output))
+    level_output += '\0' * padding_needed
+
+    hash_dest_offset = hash_level_offsets[level_num] + tree_offset
+
+    image.seek(hash_dest_offset)
+    image.write(level_output)
+
+    hash_src_offset = hash_dest_offset
+    hash_src_size = len(level_output)
+
+    level_num += 1
+
+  hasher = hashlib.new(name=hash_alg_name, string=salt)
+  hasher.update(level_output)
+  return hasher.digest()
+
+
+class AvbTool(object):
+  """Object for avbtool command-line tool."""
+
+  def __init__(self):
+    """Initializer method."""
+    self.avb = Avb()
+
+  def _add_common_args(self, sub_parser):
+    """Adds arguments used by several sub-commands.
+
+    Arguments:
+      sub_parser: The parser to add arguments to.
+    """
+    sub_parser.add_argument('--algorithm',
+                            help='Algorithm to use (default: NONE)',
+                            metavar='ALGORITHM',
+                            default='NONE')
+    sub_parser.add_argument('--key',
+                            help='Path to RSA private key file',
+                            metavar='KEY',
+                            required=False)
+    sub_parser.add_argument('--rollback_index',
+                            help='Rollback Index',
+                            type=parse_number,
+                            default=0)
+    sub_parser.add_argument('--prop',
+                            help='Add property',
+                            metavar='KEY:VALUE',
+                            action='append')
+    sub_parser.add_argument('--prop_from_file',
+                            help='Add property from file',
+                            metavar='KEY:PATH',
+                            action='append')
+    sub_parser.add_argument('--kernel_cmdline',
+                            help='Add kernel cmdline',
+                            metavar='CMDLINE',
+                            action='append')
+    sub_parser.add_argument('--generate_dm_verity_cmdline_from_hashtree',
+                            metavar='IMAGE',
+                            help='Generate kernel cmdline for dm-verity',
+                            type=argparse.FileType('rb'))
+    sub_parser.add_argument('--include_descriptors_from_image',
+                            help='Include descriptors from image',
+                            metavar='IMAGE',
+                            action='append',
+                            type=argparse.FileType('rb'))
+
+  def run(self, argv):
+    """Command-line processor.
+
+    Arguments:
+      argv: Pass sys.argv from main.
+    """
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(title='subcommands')
+
+    sub_parser = subparsers.add_parser('version',
+                                       help='Prints version of avbtool.')
+    sub_parser.set_defaults(func=self.version)
+
+    sub_parser = subparsers.add_parser('extract_public_key',
+                                       help='Extract public key.')
+    sub_parser.add_argument('--key',
+                            help='Path to RSA private key file',
+                            required=True)
+    sub_parser.add_argument('--output',
+                            help='Output file name',
+                            type=argparse.FileType('wb'),
+                            required=True)
+    sub_parser.set_defaults(func=self.extract_public_key)
+
+    sub_parser = subparsers.add_parser('make_vbmeta_image',
+                                       help='Makes a vbmeta image.')
+    sub_parser.add_argument('--output',
+                            help='Output file name',
+                            type=argparse.FileType('wb'),
+                            required=True)
+    self._add_common_args(sub_parser)
+    sub_parser.add_argument('--chain_partition',
+                            help='Allow signed integrity-data for partition',
+                            metavar='PART_NAME:ROLLBACK_SLOT:KEY_PATH',
+                            action='append')
+    sub_parser.set_defaults(func=self.make_vbmeta_image)
+
+    sub_parser = subparsers.add_parser('add_hash_footer',
+                                       help='Add hashes and footer to image.')
+    sub_parser.add_argument('--image',
+                            help='Brillo boot image to add hashes to',
+                            type=argparse.FileType('rab+'))
+    sub_parser.add_argument('--partition_size',
+                            help='Partition size',
+                            type=parse_number,
+                            required=True)
+    sub_parser.add_argument('--partition_name',
+                            help='Partition name',
+                            required=True)
+    sub_parser.add_argument('--hash_algorithm',
+                            help='Hash algorithm to use (default: sha256)',
+                            default='sha256')
+    sub_parser.add_argument('--salt',
+                            help='Salt in hex (default: /dev/urandom)')
+    self._add_common_args(sub_parser)
+    sub_parser.set_defaults(func=self.add_hash_footer)
+
+    sub_parser = subparsers.add_parser('add_hashtree_footer',
+                                       help='Add hashtree and footer to image.')
+    sub_parser.add_argument('--image',
+                            help='Brillo boot image to add hashes to',
+                            type=argparse.FileType('rab+'))
+    sub_parser.add_argument('--partition_size',
+                            help='Partition size',
+                            type=parse_number,
+                            required=True)
+    sub_parser.add_argument('--partition_name',
+                            help='Partition name',
+                            required=True)
+    sub_parser.add_argument('--hash_algorithm',
+                            help='Hash algorithm to use (default: sha1)',
+                            default='sha1')
+    sub_parser.add_argument('--salt',
+                            help='Salt in hex (default: /dev/urandom)')
+    sub_parser.add_argument('--block_size',
+                            help='Block size (default: 4096)',
+                            type=parse_number,
+                            default=4096)
+    self._add_common_args(sub_parser)
+    sub_parser.set_defaults(func=self.add_hashtree_footer)
+
+    sub_parser = subparsers.add_parser('erase_footer',
+                                       help='Erase footer from an image.')
+    sub_parser.add_argument('--image',
+                            help='Brillo image with a footer',
+                            type=argparse.FileType('rwb+'),
+                            required=True)
+    sub_parser.add_argument('--keep_hashtree',
+                            help='Keep the hashtree in the image',
+                            action='store_true')
+    sub_parser.set_defaults(func=self.erase_footer)
+
+    sub_parser = subparsers.add_parser(
+        'info_image',
+        help='Show information about vbmeta or footer.')
+    sub_parser.add_argument('--image',
+                            help='Brillo boot image to use',
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--output',
+                            help='Write info to file',
+                            type=argparse.FileType('wt'),
+                            default=sys.stdout)
+    sub_parser.set_defaults(func=self.info_image)
+
+    args = parser.parse_args(argv[1:])
+    try:
+      args.func(args)
+    except AvbError as e:
+      sys.stderr.write('{}\n'.format(e.message))
+      sys.exit(1)
+
+  def version(self, _):
+    """Implements the 'version' sub-command."""
+    print '{}.{}'.format(AVB_VERSION_MAJOR, AVB_VERSION_MINOR)
+
+  def extract_public_key(self, args):
+    """Implements the 'extract_public_key' sub-command."""
+    self.avb.extract_public_key(args.key, args.output)
+
+  def make_vbmeta_image(self, args):
+    """Implements the 'make_vbmeta_image' sub-command."""
+    self.avb.make_vbmeta_image(args.output, args.chain_partition,
+                               args.algorithm, args.key, args.rollback_index,
+                               args.prop, args.prop_from_file,
+                               args.kernel_cmdline,
+                               args.generate_dm_verity_cmdline_from_hashtree,
+                               args.include_descriptors_from_image)
+
+  def add_hash_footer(self, args):
+    """Implements the 'add_hash_footer' sub-command."""
+    self.avb.add_hash_footer(args.image, args.partition_size,
+                             args.partition_name, args.hash_algorithm,
+                             args.salt, args.algorithm, args.key,
+                             args.rollback_index, args.prop,
+                             args.prop_from_file, args.kernel_cmdline,
+                             args.generate_dm_verity_cmdline_from_hashtree,
+                             args.include_descriptors_from_image)
+
+  def add_hashtree_footer(self, args):
+    """Implements the 'add_hashtree_footer' sub-command."""
+    self.avb.add_hashtree_footer(args.image, args.partition_size,
+                                 args.partition_name, args.hash_algorithm,
+                                 args.block_size, args.salt, args.algorithm,
+                                 args.key, args.rollback_index, args.prop,
+                                 args.prop_from_file, args.kernel_cmdline,
+                                 args.generate_dm_verity_cmdline_from_hashtree,
+                                 args.include_descriptors_from_image)
+
+  def erase_footer(self, args):
+    """Implements the 'erase_footer' sub-command."""
+    self.avb.erase_footer(args.image, args.keep_hashtree)
+
+  def info_image(self, args):
+    """Implements the 'info_image' sub-command."""
+    self.avb.info_image(args.image, args.output)
+
+
+if __name__ == '__main__':
+  tool = AvbTool()
+  tool.run(sys.argv)
