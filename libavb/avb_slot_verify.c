@@ -88,7 +88,10 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
   io_ret =
       ops->read_from_partition(ops, part_name, 0 /* offset */,
                                hash_desc.image_size, image_buf, &part_num_read);
-  if (io_ret != AVB_IO_RESULT_OK) {
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
     avb_errorv(part_name, ": Error loading data from partition.\n", NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
     goto out;
@@ -212,7 +215,10 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     io_ret =
         ops->read_from_partition(ops, full_partition_name, -AVB_FOOTER_SIZE,
                                  AVB_FOOTER_SIZE, footer_buf, &footer_num_read);
-    if (io_ret != AVB_IO_RESULT_OK) {
+    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    } else if (io_ret != AVB_IO_RESULT_OK) {
       avb_errorv(full_partition_name, ": Error loading footer.\n", NULL);
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
       goto out;
@@ -246,7 +252,10 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
 
   io_ret = ops->read_from_partition(ops, full_partition_name, vbmeta_offset,
                                     vbmeta_size, vbmeta_buf, &vbmeta_num_read);
-  if (io_ret != AVB_IO_RESULT_OK) {
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
     avb_errorv(full_partition_name, ": Error loading vbmeta data.\n", NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
     goto out;
@@ -277,8 +286,22 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
       goto out;
     }
   } else {
+    bool key_is_trusted = false;
+
     avb_assert(is_main_vbmeta);
-    if (!ops->validate_vbmeta_public_key(ops, pk_data, pk_len)) {
+    io_ret =
+        ops->validate_vbmeta_public_key(ops, pk_data, pk_len, &key_is_trusted);
+    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    } else if (io_ret != AVB_IO_RESULT_OK) {
+      avb_errorv(full_partition_name,
+                 ": Error while checking public key used to sign data.\n",
+                 NULL);
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+      goto out;
+    }
+    if (!key_is_trusted) {
       avb_errorv(full_partition_name,
                  ": Public key used to sign data rejected.\n", NULL);
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED;
@@ -290,8 +313,12 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
                                              &vbmeta_header);
 
   /* Check rollback index. */
-  if (!ops->read_rollback_index(ops, rollback_index_slot,
-                                &stored_rollback_index)) {
+  io_ret = ops->read_rollback_index(ops, rollback_index_slot,
+                                    &stored_rollback_index);
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
     avb_errorv(full_partition_name,
                ": Error getting rollback index for slot.\n", NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
@@ -480,17 +507,19 @@ out:
   return ret;
 }
 
+#define NUM_GUIDS 2
+
 /* Substitutes all variables (e.g. $(ANDROID_SYSTEM_PARTUUID)) with
  * values. Returns NULL on OOM, otherwise the cmdline with values
  * replaced.
  */
 static char* sub_cmdline(AvbOps* ops, const char* cmdline,
                          const char* ab_suffix) {
-  const int NUM_GUIDS = 2;
   const char* part_name_str[NUM_GUIDS] = {"system", "boot"};
   const char* replace_str[NUM_GUIDS] = {"$(ANDROID_SYSTEM_PARTUUID)",
                                         "$(ANDROID_BOOT_PARTUUID)"};
   char* ret = NULL;
+  AvbIOResult io_ret;
 
   /* Replace unique partition GUIDs */
   for (size_t n = 0; n < NUM_GUIDS; n++) {
@@ -505,8 +534,11 @@ static char* sub_cmdline(AvbOps* ops, const char* cmdline,
       goto fail;
     }
 
-    if (!ops->get_unique_guid_for_partition(ops, part_name, guid_buf,
-                                            sizeof guid_buf)) {
+    io_ret = ops->get_unique_guid_for_partition(ops, part_name, guid_buf,
+                                                sizeof guid_buf);
+    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+      return NULL;
+    } else if (io_ret != AVB_IO_RESULT_OK) {
       avb_error("Error getting unique GUID for partition.\n");
       goto fail;
     }
@@ -615,6 +647,7 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops, const char* ab_suffix,
   AvbSlotVerifyResult ret;
   AvbSlotVerifyData* slot_data = NULL;
   AvbAlgorithmType algorithm_type = AVB_ALGORITHM_TYPE_NONE;
+  AvbIOResult io_ret;
 
   if (out_data != NULL) {
     *out_data = NULL;
@@ -662,7 +695,11 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops, const char* ab_suffix,
 
     /* Set androidboot.avb.device_state to "locked" or "unlocked". */
     bool is_device_unlocked;
-    if (!ops->read_is_device_unlocked(ops, &is_device_unlocked)) {
+    io_ret = ops->read_is_device_unlocked(ops, &is_device_unlocked);
+    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto fail;
+    } else if (io_ret != AVB_IO_RESULT_OK) {
       avb_error("Error getting device state.\n");
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
       goto fail;
