@@ -30,11 +30,26 @@ inside Android. It has a simple abstraction for system dependencies
 (see libavb/avb_sysdeps.h) as well as operations that the boot loader
 or OS is expected to implement (see libavb/avb_ops.h).
 
-In addition to handling verified boot, libavb will in the future be
-extended to handle A/B selection in a way that can be used in the
-device's fastboot implementation, its boot loader, and its
-boot_control HAL implementation. This will be implemented in a future
-CL.
+In addition to handling verified boot, libavb also takes care of A/B
+selection including managing rollback indexes. The bootloader can use
+this through the avb_ab_flow() function.
+
+A/B metadata is stored in the 'misc' partition in the |slot_suffix|
+field using a format private to libavb. For more information about the
+misc.img file format see the bootable/recovery/bootloader.h file. A/B
+metadata can be written to misc.img using the set_ab_metadata
+sub-command. A/B metadata is comprised of (for each slot) a priority
+field (0 to 15), number of tries remaining for attempting to boot the
+slot (0 to 7), and a flag to indicate whether the slot has
+successfully booted.
+
+A/B metadata integrity is provided by a simple magic marker and a
+CRC-32 checksum. If invalid A/B metadata is detected, the behavior is
+to reset the A/B metadata to a known state where both slots are given
+seven boot tries.
+
+An implementation of the boot_control HAL using AVB-specific A/B
+metadata is also provided.
 
 -- FILES AND DIRECTORIES
 

@@ -38,6 +38,9 @@ extern "C" {
 
 /* Return codes used in avb_slot_verify(), see that function for
  * documentation for each field.
+ *
+ * Use avb_slot_verify_result_to_string() to get a textual
+ * representation usable for error/debug output.
  */
 typedef enum {
   AVB_SLOT_VERIFY_RESULT_OK,
@@ -49,6 +52,9 @@ typedef enum {
   AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA
 } AvbSlotVerifyResult;
 
+/* Get a textual representation of |result|. */
+const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result);
+
 /* Maximum number of rollback index slots number supported. */
 #define AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS 32
 
@@ -58,6 +64,9 @@ typedef enum {
  *
  * All data pointed to by this struct will be freed when the
  * avb_slot_verify_data_free() function is called.
+ *
+ * The |ab_suffix| field is the copy of the of |ab_suffix| field
+ * passed to avb_slot_verify(). It is the A/B suffix of the slot.
  *
  * The image loaded and verified from the boot partition of the slot
  * is accessible via the |boot_data| and is of length |boot_size|
@@ -94,6 +103,7 @@ typedef enum {
  *   the digest of the vbmeta image.
  */
 typedef struct {
+  char* ab_suffix;
   uint8_t* boot_data;
   size_t boot_size;
   uint8_t* vbmeta_data;

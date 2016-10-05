@@ -439,3 +439,28 @@ TEST(UtilTest, StrReplace) {
   EXPECT_EQ("LONGSTRINGLONGSTRING",
             std::string(avb_replace("$(FOO)$(FOO)", "$(FOO)", "LONGSTRING")));
 }
+
+TEST(UtilTest, Crc32) {
+  /* Compare with output of crc32(1):
+   *
+   *  $ (echo -n foobar > /tmp/crc32_input); crc32 /tmp/crc32_input
+   *  9ef61f95
+   */
+  EXPECT_EQ(uint32_t(0x9ef61f95), avb_crc32((const uint8_t*)"foobar", 6));
+}
+
+TEST(UtilTest, htobe32) {
+  EXPECT_EQ(avb_htobe32(0x12345678), htobe32(0x12345678));
+}
+
+TEST(UtilTest, be32toh) {
+  EXPECT_EQ(avb_be32toh(0x12345678), be32toh(0x12345678));
+}
+
+TEST(UtilTest, htobe64) {
+  EXPECT_EQ(avb_htobe64(0x123456789abcdef0), htobe64(0x123456789abcdef0));
+}
+
+TEST(UtilTest, be64toh) {
+  EXPECT_EQ(avb_be64toh(0x123456789abcdef0), be64toh(0x123456789abcdef0));
+}

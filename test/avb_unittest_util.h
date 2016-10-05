@@ -53,7 +53,7 @@ class BaseAvbToolTest : public ::testing::Test {
  protected:
   virtual ~BaseAvbToolTest() {}
 
-  /* Generates a Brillo vbmeta image, using avbtoool, with file name
+  /* Generates a vbmeta image, using avbtoool, with file name
    * |image_name|. The generated vbmeta image will written to disk,
    * see the |vbmeta_image_path_| variable for its path and
    * |vbmeta_image_| for the content.
@@ -84,6 +84,23 @@ class BaseAvbToolTest : public ::testing::Test {
     ASSERT_TRUE(base::ReadFile(vbmeta_image_path_,
                                reinterpret_cast<char*>(vbmeta_image_.data()),
                                vbmeta_image_.size()));
+  }
+
+  /* Generate a file with name |file_name| of size |image_size| with
+   * known content (0x00 0x01 0x02 .. 0xff 0x00 0x01 ..).
+   */
+  base::FilePath GenerateImage(const std::string file_name, size_t image_size) {
+    std::vector<uint8_t> image;
+    image.resize(image_size);
+    for (size_t n = 0; n < image_size; n++) {
+      image[n] = uint8_t(n);
+    }
+    base::FilePath image_path = testdir_.Append(file_name);
+    EXPECT_EQ(image_size,
+              static_cast<const size_t>(base::WriteFile(
+                  image_path, reinterpret_cast<const char*>(image.data()),
+                  image.size())));
+    return image_path;
   }
 
   /* Returns the output of 'avbtool info_image' for a given image. */

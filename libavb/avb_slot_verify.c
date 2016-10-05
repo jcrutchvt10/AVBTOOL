@@ -633,6 +633,13 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops, const char* ab_suffix,
 
   /* If things check out, mangle the kernel command-line as needed. */
   if (ret == AVB_SLOT_VERIFY_RESULT_OK) {
+    /* Fill in |ab_suffix| field. */
+    slot_data->ab_suffix = avb_strdup(ab_suffix);
+    if (slot_data->ab_suffix == NULL) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto fail;
+    }
+
     /* Substitute $(ANDROID_SYSTEM_PARTUUID) and friends. */
     if (slot_data->cmdline != NULL) {
       char* new_cmdline = sub_cmdline(ops, slot_data->cmdline, ab_suffix);
@@ -729,6 +736,9 @@ fail:
 }
 
 void avb_slot_verify_data_free(AvbSlotVerifyData* data) {
+  if (data->ab_suffix != NULL) {
+    avb_free(data->ab_suffix);
+  }
   if (data->boot_data != NULL) {
     avb_free(data->boot_data);
   }
@@ -736,4 +746,40 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data) {
     avb_free(data->cmdline);
   }
   avb_free(data);
+}
+
+const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result) {
+  const char* ret = NULL;
+
+  switch (result) {
+    case AVB_SLOT_VERIFY_RESULT_OK:
+      ret = "OK";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_OOM:
+      ret = "ERROR_OOM";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_IO:
+      ret = "ERROR_IO";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION:
+      ret = "ERROR_VERIFICATION";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX:
+      ret = "ERROR_ROLLBACK_INDEX";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED:
+      ret = "ERROR_PUBLIC_KEY_REJECTED";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
+      ret = "ERROR_INVALID_METADATA";
+      break;
+      /* Do not add a 'default:' case here because of -Wswitch. */
+  }
+
+  if (ret == NULL) {
+    avb_error("Unknown AvbSlotVerifyResult value.\n");
+    ret = "(unknown)";
+  }
+
+  return ret;
 }
