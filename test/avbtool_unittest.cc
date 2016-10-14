@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include <base/files/file_util.h>
+#include <base/strings/string_split.h>
 #include <base/strings/string_util.h>
 #include <base/strings/stringprintf.h>
 
@@ -402,6 +403,22 @@ TEST_F(AvbToolTest, AddHashFooter) { AddHashFooterTest(false); }
 
 TEST_F(AvbToolTest, AddHashFooterSparse) { AddHashFooterTest(true); }
 
+static std::string RemoveLinesStartingWith(const std::string& str,
+                                           const std::string& prefix) {
+  std::vector<std::string> lines;
+  std::string ret;
+
+  lines = base::SplitString(str, "\n", base::KEEP_WHITESPACE,
+                            base::SPLIT_WANT_NONEMPTY);
+  for (const std::string& line : lines) {
+    if (!base::StartsWith(line, prefix, base::CompareCase::SENSITIVE)) {
+      ret += line;
+      ret += '\n';
+    }
+  }
+  return ret;
+}
+
 TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
   const size_t partition_size = 10 * 1024 * 1024;
   const size_t metadata_size = 128 * 1024;
@@ -424,8 +441,12 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
                  "--key test/data/testkey_rsa2048.pem",
                  partition_path.value().c_str(), (int)partition_size);
 
-  // NOTE: This could start failing if there are changes to
-  // make_ext4fs. If that happens, just update this test.
+  // Since we may be using an arbritary version of make_ext4fs
+  // (because of different branches) the contents of the resulting
+  // disk image may slightly change. It's enough to just remove the
+  // "Digest:" line from the output to work around this.
+  std::string info =
+      RemoveLinesStartingWith(InfoImage(partition_path), "      Digest:");
   ASSERT_EQ(
       "Footer version:           1.0\n"
       "Image size:               10485760 bytes\n"
@@ -444,10 +465,8 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
       "      Image Size:            10354688 bytes\n"
       "      Hash Algorithm:        sha256\n"
       "      Partition Name:        foobar\n"
-      "      Salt:                  d00df00d\n"
-      "      Digest:                "
-      "f086a7b8f6c4e9b8c7607423f81cb4be7aca9865f65b37fb8d2ee544eb27e141\n",
-      InfoImage(partition_path));
+      "      Salt:                  d00df00d\n",
+      info);
 
   EXPECT_COMMAND(0, "mv %s %s.sparse", partition_path.value().c_str(),
                  partition_path.value().c_str());
