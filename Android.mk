@@ -159,8 +159,9 @@ LOCAL_LDFLAGS := $(avb_common_ldflags)
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/libavb
 LOCAL_SHARED_LIBRARIES := libcutils libavb
 LOCAL_STATIC_LIBRARIES := libfs_mgr
-LOCAL_POST_INSTALL_CMD := $(hide) ln -sf bootctrl.avb.so \
-    $(TARGET_OUT_SHARED_LIBRARIES)/hw/bootctrl.default.so
+LOCAL_POST_INSTALL_CMD := \
+	$(hide) mkdir -p $(TARGET_OUT_SHARED_LIBRARIES)/hw && \
+	ln -sf bootctrl.avb.so $(TARGET_OUT_SHARED_LIBRARIES)/hw/bootctrl.default.so
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
