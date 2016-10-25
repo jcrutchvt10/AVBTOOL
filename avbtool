@@ -32,6 +32,7 @@ import os
 import struct
 import subprocess
 import sys
+import tempfile
 
 import Crypto.PublicKey.RSA
 
@@ -978,6 +979,9 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     tree_size: Size of the tree.
     data_block_size: Data block size
     hash_block_size: Hash block size
+    fec_num_roots: Number of roots used for FEC (0 if FEC is not used).
+    fec_offset: Offset of FEC data (0 if FEC is not used).
+    fec_size: Size of FEC data (0 if FEC is not used).
     hash_algorithm: Hash algorithm used.
     partition_name: Partition name.
     salt: Salt used.
@@ -985,7 +989,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
   """
 
   TAG = 1
-  SIZE = 96
+  SIZE = 116
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
                    'L'  # dm-verity version used
                    'Q'  # image size (bytes)
@@ -993,6 +997,9 @@ class AvbHashtreeDescriptor(AvbDescriptor):
                    'Q'  # tree size (bytes)
                    'L'  # data block size (bytes)
                    'L'  # hash block size (bytes)
+                   'L'  # FEC number of roots
+                   'Q'  # FEC offset (bytes)
+                   'Q'  # FEC size (bytes)
                    '32s'  # hash algorithm used
                    'L'  # partition name (bytes)
                    'L'  # salt length (bytes)
@@ -1013,7 +1020,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     if data:
       (tag, num_bytes_following, self.dm_verity_version, self.image_size,
        self.tree_offset, self.tree_size, self.data_block_size,
-       self.hash_block_size, self.hash_algorithm, partition_name_len, salt_len,
+       self.hash_block_size, self.fec_num_roots, self.fec_offset, self.fec_size,
+       self.hash_algorithm, partition_name_len, salt_len,
        root_digest_len) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
       expected_size = round_to_multiple(
           self.SIZE - 16 + partition_name_len + salt_len + root_digest_len, 8)
@@ -1041,6 +1049,9 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       self.tree_size = 0
       self.data_block_size = 0
       self.hash_block_size = 0
+      self.fec_num_roots = 0
+      self.fec_offset = 0
+      self.fec_size = 0
       self.hash_algorithm = ''
       self.partition_name = ''
       self.salt = bytearray()
@@ -1061,6 +1072,9 @@ class AvbHashtreeDescriptor(AvbDescriptor):
         self.data_block_size))
     o.write('      Hash Block Size:       {} bytes\n'.format(
         self.hash_block_size))
+    o.write('      FEC num roots:         {}\n'.format(self.fec_num_roots))
+    o.write('      FEC offset:            {}\n'.format(self.fec_offset))
+    o.write('      FEC size:              {} bytes\n'.format(self.fec_size))
     o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
     o.write('      Partition Name:        {}\n'.format(self.partition_name))
     o.write('      Salt:                  {}\n'.format(str(self.salt).encode(
@@ -1082,7 +1096,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
                        self.dm_verity_version, self.image_size,
                        self.tree_offset, self.tree_size, self.data_block_size,
-                       self.hash_block_size, self.hash_algorithm,
+                       self.hash_block_size, self.fec_num_roots,
+                       self.fec_offset, self.fec_size, self.hash_algorithm,
                        len(encoded_name), len(self.salt), len(self.root_digest))
     padding = struct.pack(str(padding_size) + 'x')
     ret = desc + encoded_name + self.salt + self.root_digest + padding
@@ -1722,18 +1737,31 @@ class Avb(object):
       raise AvbError('No hashtree descriptor in given image')
 
     c = 'dm="1 vroot none ro 1,'
-    c += '0 '  # start
-    c += '{} '.format((ht.image_size / 512))  # size (# sectors)
-    c += 'verity {} '.format(ht.dm_verity_version)  # type and version
-    c += 'PARTUUID=$(ANDROID_SYSTEM_PARTUUID) '  # data_dev
-    c += 'PARTUUID=$(ANDROID_SYSTEM_PARTUUID) '  # hash_dev
-    c += '{} '.format(ht.data_block_size)  # data_block
-    c += '{} '.format(ht.hash_block_size)  # hash_block
-    c += '{} '.format(ht.image_size / ht.data_block_size)  # #blocks
-    c += '{} '.format(ht.image_size / ht.data_block_size)  # hash_offset
-    c += '{} '.format(ht.hash_algorithm)  # hash_alg
-    c += '{} '.format(str(ht.root_digest).encode('hex'))  # root_digest
-    c += '{}'.format(str(ht.salt).encode('hex'))  # salt
+    c += '0'  # start
+    c += ' {}'.format((ht.image_size / 512))  # size (# sectors)
+    c += ' verity {}'.format(ht.dm_verity_version)  # type and version
+    c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'  # data_dev
+    c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'  # hash_dev
+    c += ' {}'.format(ht.data_block_size)  # data_block
+    c += ' {}'.format(ht.hash_block_size)  # hash_block
+    c += ' {}'.format(ht.image_size / ht.data_block_size)  # #blocks
+    c += ' {}'.format(ht.image_size / ht.data_block_size)  # hash_offset
+    c += ' {}'.format(ht.hash_algorithm)  # hash_alg
+    c += ' {}'.format(str(ht.root_digest).encode('hex'))  # root_digest
+    c += ' {}'.format(str(ht.salt).encode('hex'))  # salt
+    if ht.fec_num_roots > 0:
+      c += ' 9'  # number of optional args
+      c += ' ignore_zero_blocks'
+      c += ' use_fec_from_device PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'
+      c += ' fec_roots {}'.format(ht.fec_num_roots)
+      # Note that fec_blocks is the size that FEC covers, *not* the
+      # size of the FEC data. Since we use FEC for everything up until
+      # the FEC data, it's the same as the offset.
+      c += ' fec_blocks {}'.format(ht.fec_offset/ht.data_block_size)
+      c += ' fec_start {}'.format(ht.fec_offset/ht.data_block_size)
+    else:
+      c += ' 1'  # number of optional args
+      c += ' ignore_zero_blocks'
     c += '"'
 
     desc = AvbKernelCmdlineDescriptor()
@@ -2112,8 +2140,9 @@ class Avb(object):
       raise
 
   def add_hashtree_footer(self, image_filename, partition_size, partition_name,
-                          hash_algorithm, block_size, salt, algorithm_name,
-                          key_path, rollback_index, props, props_from_file,
+                          generate_fec, fec_num_roots, hash_algorithm,
+                          block_size, salt, algorithm_name, key_path,
+                          rollback_index, props, props_from_file,
                           kernel_cmdlines,
                           generate_dm_verity_cmdline_from_hashtree,
                           include_descriptors_from_image,
@@ -2127,6 +2156,8 @@ class Avb(object):
       image_filename: File to add the footer to.
       partition_size: Size of partition.
       partition_name: Name of partition (without A/B suffix).
+      generate_fec: If True, generate FEC codes.
+      fec_num_roots: Number of roots for FEC.
       hash_algorithm: Hash algorithm to use.
       block_size: Block size to use.
       salt: Salt to use as a hexadecimal string or None to use /dev/urandom.
@@ -2156,7 +2187,11 @@ class Avb(object):
     # metadata.
     (_, max_tree_size) = calc_hash_level_offsets(
         partition_size, block_size, digest_size + digest_padding)
-    max_metadata_size = (max_tree_size + self.MAX_VBMETA_SIZE +
+    max_fec_size = 0
+    if generate_fec:
+      max_fec_size = calc_fec_data_size(partition_size, fec_num_roots)
+    max_metadata_size = (max_fec_size + max_tree_size +
+                         self.MAX_VBMETA_SIZE +
                          self.MAX_FOOTER_SIZE)
     max_image_size = partition_size - max_metadata_size
 
@@ -2250,9 +2285,24 @@ class Avb(object):
                         len(hash_tree))
       hash_tree_with_padding = hash_tree + '\0'*padding_needed
       image.append_raw(hash_tree_with_padding)
+      len_hashtree_and_fec = len(hash_tree_with_padding)
+
+      # Generate FEC codes, if requested.
+      if generate_fec:
+        fec_data = generate_fec_data(image_filename, fec_num_roots)
+        padding_needed = (round_to_multiple(len(fec_data), image.block_size) -
+                          len(fec_data))
+        fec_data_with_padding = fec_data + '\0'*padding_needed
+        fec_offset = image.image_size
+        image.append_raw(fec_data_with_padding)
+        len_hashtree_and_fec += len(fec_data_with_padding)
+        # Update the hashtree descriptor.
+        ht_desc.fec_num_roots = fec_num_roots
+        ht_desc.fec_offset = fec_offset
+        ht_desc.fec_size = len(fec_data)
 
       # Generate the VBMeta footer and add padding as needed.
-      vbmeta_offset = tree_offset + len(hash_tree_with_padding)
+      vbmeta_offset = tree_offset + len_hashtree_and_fec
       vbmeta_blob = self._generate_vbmeta_blob(
           algorithm_name, key_path, [ht_desc], rollback_index, props,
           props_from_file, kernel_cmdlines,
@@ -2321,6 +2371,65 @@ def calc_hash_level_offsets(image_size, block_size, digest_size):
     level_offsets.append(offset)
 
   return level_offsets, tree_size
+
+
+# See system/extras/libfec/include/fec/io.h for these definitions.
+FEC_FOOTER_FORMAT = '<LLLLLQ32s'
+FEC_MAGIC = 0xfecfecfe
+
+
+def calc_fec_data_size(image_size, num_roots):
+  """Calculates how much space FEC data will take.
+
+  Args:
+    image_size: The size of the image.
+    num_roots: Number of roots.
+
+  Returns:
+    The number of bytes needed for FEC for an image of the given size
+    and with the requested number of FEC roots.
+
+  Raises:
+    ValueError: If output from the 'fec' tool is invalid.
+
+  """
+  p = subprocess.Popen(
+      ['fec', '--print-fec-size', str(image_size), '--roots', str(num_roots)],
+      stdout=subprocess.PIPE,
+      stderr=subprocess.PIPE)
+  (pout, perr) = p.communicate()
+  retcode = p.wait()
+  if retcode != 0:
+    raise ValueError('Error invoking fec: {}'.format(perr))
+  return int(pout)
+
+
+def generate_fec_data(image_filename, num_roots):
+  """Generate FEC codes for an image.
+
+  Args:
+    image_filename: The filename of the image.
+    num_roots: Number of roots.
+
+  Returns:
+    The FEC data blob.
+
+  Raises:
+    ValueError: If output from the 'fec' tool is invalid.
+  """
+  fec_tmpfile = tempfile.NamedTemporaryFile()
+  subprocess.check_call(
+      ['fec', '--encode', '--roots', str(num_roots), image_filename,
+       fec_tmpfile.name],
+      stderr=open(os.devnull))
+  fec_data = fec_tmpfile.read()
+  footer_size = struct.calcsize(FEC_FOOTER_FORMAT)
+  footer_data = fec_data[-footer_size:]
+  (magic, _, _, num_roots, fec_size, _, _) = struct.unpack(FEC_FOOTER_FORMAT,
+                                                           footer_data)
+  if magic != FEC_MAGIC:
+    raise ValueError('Unexpected magic in FEC footer')
+  return fec_data[0:fec_size]
 
 
 def generate_hash_tree(image, image_size, block_size, hash_alg_name, salt,
@@ -2509,6 +2618,13 @@ class AvbTool(object):
                             help='Block size (default: 4096)',
                             type=parse_number,
                             default=4096)
+    sub_parser.add_argument('--generate_fec',
+                            help='Add forward-error-correction codes',
+                            action='store_true')
+    sub_parser.add_argument('--fec_num_roots',
+                            help='Number of roots for FEC (default: 2)',
+                            type=parse_number,
+                            default=2)
     sub_parser.add_argument('--calc_max_image_size',
                             help=('Don\'t store the hashtree or footer - '
                                   'instead calculate the maximum image size '
@@ -2598,6 +2714,7 @@ class AvbTool(object):
     self.avb.add_hashtree_footer(args.image.name if args.image else None,
                                  args.partition_size,
                                  args.partition_name,
+                                 args.generate_fec, args.fec_num_roots,
                                  args.hash_algorithm, args.block_size,
                                  args.salt, args.algorithm, args.key,
                                  args.rollback_index, args.prop,
