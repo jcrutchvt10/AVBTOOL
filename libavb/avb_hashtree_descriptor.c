@@ -46,6 +46,9 @@ bool avb_hashtree_descriptor_validate_and_byteswap(
   dest->tree_size = avb_be64toh(dest->tree_size);
   dest->data_block_size = avb_be32toh(dest->data_block_size);
   dest->hash_block_size = avb_be32toh(dest->hash_block_size);
+  dest->fec_num_roots = avb_be32toh(dest->fec_num_roots);
+  dest->fec_offset = avb_be64toh(dest->fec_offset);
+  dest->fec_size = avb_be64toh(dest->fec_size);
   dest->partition_name_len = avb_be32toh(dest->partition_name_len);
   dest->salt_len = avb_be32toh(dest->salt_len);
   dest->root_digest_len = avb_be32toh(dest->root_digest_len);

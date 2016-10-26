@@ -54,6 +54,9 @@ typedef struct AvbHashtreeDescriptor {
   uint64_t tree_size;
   uint32_t data_block_size;
   uint32_t hash_block_size;
+  uint32_t fec_num_roots;
+  uint64_t fec_offset;
+  uint64_t fec_size;
   uint8_t hash_algorithm[32];
   uint32_t partition_name_len;
   uint32_t salt_len;
