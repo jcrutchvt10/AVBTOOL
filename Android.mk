@@ -45,6 +45,7 @@ avb_common_ldflags := \
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES := avbtool
 LOCAL_MODULE_CLASS := EXECUTABLES
+LOCAL_REQUIRED_MODULES := fec
 LOCAL_IS_HOST_MODULE := true
 LOCAL_MODULE := avbtool
 include $(BUILD_PREBUILT)

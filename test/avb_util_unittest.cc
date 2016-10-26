@@ -139,8 +139,8 @@ TEST(UtilTest, HashtreeDescriptorByteswap) {
   uint32_t n32;
   uint64_t n64;
 
-  // Specify 40 bytes of data past the end of the descriptor struct.
-  nbf = 40 + sizeof(AvbHashtreeDescriptor) - sizeof(AvbDescriptor);
+  // Specify 44 bytes of data past the end of the descriptor struct.
+  nbf = 44 + sizeof(AvbHashtreeDescriptor) - sizeof(AvbDescriptor);
   h.parent_descriptor.num_bytes_following = htobe64(nbf);
   h.parent_descriptor.tag = htobe64(AVB_DESCRIPTOR_TAG_HASHTREE);
   h.partition_name_len = htobe32(10);
@@ -162,8 +162,14 @@ TEST(UtilTest, HashtreeDescriptorByteswap) {
   n32++;
   h.hash_block_size = htobe32(n32);
   n32++;
+  h.fec_num_roots = htobe32(n32);
+  n32++;
+  h.fec_offset = htobe64(n64);
+  n64++;
+  h.fec_size = htobe64(n64);
+  n64++;
 
-  EXPECT_NE(0, avb_hashtree_descriptor_validate_and_byteswap(&h, &s));
+  EXPECT_TRUE(avb_hashtree_descriptor_validate_and_byteswap(&h, &s));
 
   n32 = 0x11223344;
   n64 = 0x1122334455667788;
@@ -180,6 +186,12 @@ TEST(UtilTest, HashtreeDescriptorByteswap) {
   n32++;
   EXPECT_EQ(n32, s.hash_block_size);
   n32++;
+  EXPECT_EQ(n32, s.fec_num_roots);
+  n32++;
+  EXPECT_EQ(n64, s.fec_offset);
+  n64++;
+  EXPECT_EQ(n64, s.fec_size);
+  n64++;
 
   EXPECT_EQ(AVB_DESCRIPTOR_TAG_HASHTREE, s.parent_descriptor.tag);
   EXPECT_EQ(nbf, s.parent_descriptor.num_bytes_following);
@@ -190,22 +202,22 @@ TEST(UtilTest, HashtreeDescriptorByteswap) {
   // Check for bad tag.
   bad = h;
   bad.parent_descriptor.tag = htobe64(0xf00dd00d);
-  EXPECT_EQ(0, avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
+  EXPECT_FALSE(avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
 
-  // Doesn't fit in 40 bytes (30 + 10 + 10 = 50).
+  // Doesn't fit in 44 bytes (30 + 10 + 10 = 50).
   bad = h;
   bad.partition_name_len = htobe32(30);
-  EXPECT_EQ(0, avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
+  EXPECT_FALSE(avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
 
-  // Doesn't fit in 40 bytes (10 + 30 + 10 = 50).
+  // Doesn't fit in 44 bytes (10 + 30 + 10 = 50).
   bad = h;
   bad.salt_len = htobe32(30);
-  EXPECT_EQ(0, avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
+  EXPECT_FALSE(avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
 
-  // Doesn't fit in 40 bytes (10 + 10 + 30 = 50).
+  // Doesn't fit in 44 bytes (10 + 10 + 30 = 50).
   bad = h;
   bad.root_digest_len = htobe32(30);
-  EXPECT_EQ(0, avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
+  EXPECT_FALSE(avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
 }
 
 TEST(UtilTest, HashDescriptorByteswap) {
