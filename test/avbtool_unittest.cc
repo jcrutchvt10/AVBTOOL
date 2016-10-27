@@ -300,12 +300,12 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
                                  "Image size:               1572864 bytes\n"
                                  "Original image size:      1052672 bytes\n"
                                  "VBMeta offset:            1052672\n"
-                                 "VBMeta size:              1472 bytes\n"
+                                 "VBMeta size:              1536 bytes\n"
                                  "--\n"
                                  "VBMeta image version:     1.0%s\n"
                                  "Header Block:             256 bytes\n"
                                  "Authentication Block:     576 bytes\n"
-                                 "Auxiliary Block:          640 bytes\n"
+                                 "Auxiliary Block:          704 bytes\n"
                                  "Algorithm:                SHA256_RSA2048\n"
                                  "Rollback Index:           0\n"
                                  "Descriptors:\n"
@@ -356,7 +356,7 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   EXPECT_EQ(AVB_FOOTER_MINOR_VERSION, (int)f.version_minor);
   EXPECT_EQ(1052672UL, f.original_image_size);
   EXPECT_EQ(1052672UL, f.vbmeta_offset);
-  EXPECT_EQ(1472UL, f.vbmeta_size);
+  EXPECT_EQ(1536UL, f.vbmeta_size);
 
   // Check that the vbmeta image at |f.vbmeta_offset| checks out.
   const uint8_t* vbmeta_data =
@@ -453,12 +453,12 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
       "Image size:               10485760 bytes\n"
       "Original image size:      10354688 bytes\n"
       "VBMeta offset:            10354688\n"
-      "VBMeta size:              1472 bytes\n"
+      "VBMeta size:              1536 bytes\n"
       "--\n"
       "VBMeta image version:     1.0 (Sparse)\n"
       "Header Block:             256 bytes\n"
       "Authentication Block:     576 bytes\n"
-      "Auxiliary Block:          640 bytes\n"
+      "Auxiliary Block:          704 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           0\n"
       "Descriptors:\n"
@@ -511,12 +511,12 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                                  "Image size:               1572864 bytes\n"
                                  "Original image size:      1052672 bytes\n"
                                  "VBMeta offset:            1069056\n"
-                                 "VBMeta size:              1536 bytes\n"
+                                 "VBMeta size:              1600 bytes\n"
                                  "--\n"
                                  "VBMeta image version:     1.0%s\n"
                                  "Header Block:             256 bytes\n"
                                  "Authentication Block:     576 bytes\n"
-                                 "Auxiliary Block:          704 bytes\n"
+                                 "Auxiliary Block:          768 bytes\n"
                                  "Algorithm:                SHA256_RSA2048\n"
                                  "Rollback Index:           0\n"
                                  "Descriptors:\n"
@@ -582,7 +582,7 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
   EXPECT_EQ(AVB_FOOTER_MINOR_VERSION, (int)f.version_minor);
   EXPECT_EQ(1052672UL, f.original_image_size);
   EXPECT_EQ(1069056UL, f.vbmeta_offset);
-  EXPECT_EQ(1536UL, f.vbmeta_size);
+  EXPECT_EQ(1600UL, f.vbmeta_size);
 
   // Check that the vbmeta image at |f.vbmeta_offset| checks out.
   const uint8_t* vbmeta_data =
@@ -699,12 +699,12 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
                                  "Image size:               1572864 bytes\n"
                                  "Original image size:      1052672 bytes\n"
                                  "VBMeta offset:            1085440\n"
-                                 "VBMeta size:              1536 bytes\n"
+                                 "VBMeta size:              1600 bytes\n"
                                  "--\n"
                                  "VBMeta image version:     1.0%s\n"
                                  "Header Block:             256 bytes\n"
                                  "Authentication Block:     576 bytes\n"
-                                 "Auxiliary Block:          704 bytes\n"
+                                 "Auxiliary Block:          768 bytes\n"
                                  "Algorithm:                SHA256_RSA2048\n"
                                  "Rollback Index:           0\n"
                                  "Descriptors:\n"
@@ -754,7 +754,7 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
   EXPECT_EQ(AVB_FOOTER_MINOR_VERSION, (int)f.version_minor);
   EXPECT_EQ(1052672UL, f.original_image_size);
   EXPECT_EQ(1085440UL, f.vbmeta_offset);
-  EXPECT_EQ(1536UL, f.vbmeta_size);
+  EXPECT_EQ(1600UL, f.vbmeta_size);
 
   // Check that the vbmeta image at |f.vbmeta_offset| checks out.
   const uint8_t* vbmeta_data =
@@ -1042,7 +1042,7 @@ TEST_F(AvbToolTest, ChainedPartition) {
       "VBMeta image version:     1.0\n"
       "Header Block:             256 bytes\n"
       "Authentication Block:     576 bytes\n"
-      "Auxiliary Block:          1088 bytes\n"
+      "Auxiliary Block:          1152 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           0\n"
       "Descriptors:\n"
