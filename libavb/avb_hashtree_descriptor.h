@@ -45,6 +45,9 @@ extern "C" {
  * Following this struct are |partition_name_len| bytes of the
  * partition name (UTF-8 encoded), |salt_len| bytes of salt, and then
  * |root_digest_len| bytes of the root digest.
+ *
+ * The |reserved| field is for future expansion and must be set to NUL
+ * bytes.
  */
 typedef struct AvbHashtreeDescriptor {
   AvbDescriptor parent_descriptor;
@@ -61,6 +64,7 @@ typedef struct AvbHashtreeDescriptor {
   uint32_t partition_name_len;
   uint32_t salt_len;
   uint32_t root_digest_len;
+  uint8_t reserved[64];
 } AVB_ATTR_PACKED AvbHashtreeDescriptor;
 
 /* Copies |src| to |dest| and validates, byte-swapping fields in the
