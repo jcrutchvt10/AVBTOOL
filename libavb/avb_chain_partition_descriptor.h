@@ -44,12 +44,16 @@ extern "C" {
  * Following this struct are |partition_name_len| bytes of the
  * partition name (UTF-8 encoded) and |public_key_len| bytes of the
  * public key.
+ *
+ * The |reserved| field is for future expansion and must be set to NUL
+ * bytes.
  */
 typedef struct AvbChainPartitionDescriptor {
   AvbDescriptor parent_descriptor;
   uint32_t rollback_index_slot;
   uint32_t partition_name_len;
   uint32_t public_key_len;
+  uint8_t reserved[64];
 } AVB_ATTR_PACKED AvbChainPartitionDescriptor;
 
 /* Copies |src| to |dest| and validates, byte-swapping fields in the

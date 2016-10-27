@@ -989,7 +989,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
   """
 
   TAG = 1
-  SIZE = 116
+  RESERVED = 64
+  SIZE = 116 + RESERVED
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
                    'L'  # dm-verity version used
                    'Q'  # image size (bytes)
@@ -1003,7 +1004,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
                    '32s'  # hash algorithm used
                    'L'  # partition name (bytes)
                    'L'  # salt length (bytes)
-                   'L')  # root digest length (bytes)
+                   'L' +  # root digest length (bytes)
+                   str(RESERVED) + 's')  # reserved
 
   def __init__(self, data=None):
     """Initializes a new hashtree descriptor.
@@ -1022,7 +1024,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
        self.tree_offset, self.tree_size, self.data_block_size,
        self.hash_block_size, self.fec_num_roots, self.fec_offset, self.fec_size,
        self.hash_algorithm, partition_name_len, salt_len,
-       root_digest_len) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
+       root_digest_len, _) = struct.unpack(self.FORMAT_STRING,
+                                           data[0:self.SIZE])
       expected_size = round_to_multiple(
           self.SIZE - 16 + partition_name_len + salt_len + root_digest_len, 8)
       if tag != self.TAG or num_bytes_following != expected_size:
@@ -1098,7 +1101,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
                        self.tree_offset, self.tree_size, self.data_block_size,
                        self.hash_block_size, self.fec_num_roots,
                        self.fec_offset, self.fec_size, self.hash_algorithm,
-                       len(encoded_name), len(self.salt), len(self.root_digest))
+                       len(encoded_name), len(self.salt), len(self.root_digest),
+                       self.RESERVED*'\0')
     padding = struct.pack(str(padding_size) + 'x')
     ret = desc + encoded_name + self.salt + self.root_digest + padding
     return bytearray(ret)
@@ -1118,13 +1122,15 @@ class AvbHashDescriptor(AvbDescriptor):
   """
 
   TAG = 2
-  SIZE = 68
+  RESERVED = 64
+  SIZE = 68 + RESERVED
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
                    'Q'  # image size (bytes)
                    '32s'  # hash algorithm used
                    'L'  # partition name (bytes)
                    'L'  # salt length (bytes)
-                   'L')  # digest length (bytes)
+                   'L' +  # digest length (bytes)
+                   str(RESERVED) + 's')  # reserved
 
   def __init__(self, data=None):
     """Initializes a new hash descriptor.
@@ -1141,7 +1147,7 @@ class AvbHashDescriptor(AvbDescriptor):
     if data:
       (tag, num_bytes_following, self.image_size, self.hash_algorithm,
        partition_name_len, salt_len,
-       digest_len) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
+       digest_len, _) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
       expected_size = round_to_multiple(
           self.SIZE - 16 + partition_name_len + salt_len + digest_len, 8)
       if tag != self.TAG or num_bytes_following != expected_size:
@@ -1195,7 +1201,7 @@ class AvbHashDescriptor(AvbDescriptor):
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
                        self.image_size, self.hash_algorithm, len(encoded_name),
-                       len(self.salt), len(self.digest))
+                       len(self.salt), len(self.digest), self.RESERVED*'\0')
     padding = struct.pack(str(padding_size) + 'x')
     ret = desc + encoded_name + self.salt + self.digest + padding
     return bytearray(ret)
@@ -1282,11 +1288,13 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
   """
 
   TAG = 4
-  SIZE = 28
+  RESERVED = 64
+  SIZE = 28 + RESERVED
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
                    'L'  # rollback_index_slot
                    'L'  # partition_name_size (bytes)
-                   'L')  # public_key_size (bytes)
+                   'L' +  # public_key_size (bytes)
+                   str(RESERVED) + 's')  # reserved
 
   def __init__(self, data=None):
     """Initializes a new chain partition descriptor.
@@ -1302,7 +1310,7 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
 
     if data:
       (tag, num_bytes_following, self.rollback_index_slot, partition_name_len,
-       public_key_len) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
+       public_key_len, _) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
       expected_size = round_to_multiple(
           self.SIZE - 16 + partition_name_len + public_key_len, 8)
       if tag != self.TAG or num_bytes_following != expected_size:
@@ -1348,7 +1356,7 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
                        self.rollback_index_slot, len(encoded_name),
-                       len(self.public_key))
+                       len(self.public_key), self.RESERVED*'\0')
     padding = struct.pack(str(padding_size) + 'x')
     ret = desc + encoded_name + self.public_key + padding
     return bytearray(ret)
