@@ -54,11 +54,10 @@ include $(BUILD_PREBUILT)
 include $(CLEAR_VARS)
 LOCAL_MODULE := libavb
 LOCAL_MODULE_HOST_OS := linux
-LOCAL_EXPORT_C_INDLUDE_DIRS := $(LOCAL_PATH)/libavb
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/libavb
 LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_ENABLE_DEBUG -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
-LOCAL_C_INCLUDES :=
 LOCAL_SRC_FILES := \
     libavb/avb_ab_flow.c \
     libavb/avb_chain_partition_descriptor.c \
@@ -77,17 +76,17 @@ LOCAL_SRC_FILES := \
     libavb/avb_sysdeps_posix.c \
     libavb/avb_util.c \
     libavb/avb_vbmeta_image.c
-include $(BUILD_SHARED_LIBRARY)
+include $(BUILD_STATIC_LIBRARY)
 
 # Build for the host (for unit tests).
 include $(CLEAR_VARS)
 LOCAL_MODULE := libavb_host
 LOCAL_MODULE_HOST_OS := linux
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/libavb
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -fno-stack-protector -DAVB_ENABLE_DEBUG -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
-LOCAL_C_INCLUDES :=
 LOCAL_SRC_FILES := \
     libavb/avb_ab_flow.c \
     libavb/avb_chain_partition_descriptor.c \
@@ -109,12 +108,12 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libavb_host_sysdeps
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/libavb
 LOCAL_MODULE_HOST_OS := linux
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_ENABLE_DEBUG -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
-LOCAL_C_INCLUDES :=
 LOCAL_SRC_FILES := \
     libavb/avb_sysdeps_posix.c
 include $(BUILD_HOST_STATIC_LIBRARY)
@@ -128,7 +127,6 @@ LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_ENABLE_DEBUG -DAVB_COMPILATION
 LOCAL_CPPFLAGS := $(avb_common_cppflags)
 LOCAL_LDFLAGS := $(avb_common_ldflags)
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/libavb external/gtest/include
 LOCAL_STATIC_LIBRARIES := \
     libavb_host \
     libavb_host_sysdeps \
@@ -157,9 +155,8 @@ LOCAL_SRC_FILES := \
 LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/libavb
-LOCAL_SHARED_LIBRARIES := libcutils libavb
-LOCAL_STATIC_LIBRARIES := libfs_mgr
+LOCAL_SHARED_LIBRARIES := libcutils
+LOCAL_STATIC_LIBRARIES := libavb libfs_mgr
 LOCAL_POST_INSTALL_CMD := \
 	$(hide) mkdir -p $(TARGET_OUT_SHARED_LIBRARIES)/hw && \
 	ln -sf bootctrl.avb.so $(TARGET_OUT_SHARED_LIBRARIES)/hw/bootctrl.default.so
