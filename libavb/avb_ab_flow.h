@@ -146,9 +146,10 @@ typedef enum {
 /* High-level function to select a slot to boot. The following
  * algorithm is used:
  *
- * 1. A/B metadata is loaded and validated from the 'misc' partition.
- * If the metadata on disk is invalid, it is reset using
- * avb_ab_data_init(), written to disk, and then returned.
+ * 1. A/B metadata is loaded and validated using the
+ * read_ab_metadata() operation. Typically this means it's read from
+ * the 'misc' partition and if it's invalid then it's reset using
+ * avb_ab_data_init() and this reset metadata is returned.
  *
  * 2. All bootable slots listed in the A/B metadata are verified using
  * avb_slot_verify(). If a slot fails verification, it will be marked
