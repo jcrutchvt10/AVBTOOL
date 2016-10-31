@@ -250,6 +250,9 @@ FakeAvbOps::FakeAvbOps() {
   avb_ops_->parent.read_is_device_unlocked = my_ops_read_is_device_unlocked;
   avb_ops_->parent.get_unique_guid_for_partition =
       my_ops_get_unique_guid_for_partition;
+  // Just use the built-in A/B metadata read/write routines.
+  avb_ops_->parent.read_ab_metadata = avb_ab_data_read;
+  avb_ops_->parent.write_ab_metadata = avb_ab_data_write;
   avb_ops_->my_ops = this;
 }
 
