@@ -440,6 +440,15 @@ TEST(UtilTest, StrStr) {
   EXPECT_EQ(haystack, avb_strstr(haystack, haystack));
 }
 
+TEST(UtilTest, StrvFindStr) {
+  const char* strings[] = {"abcabc", "abc", "def", nullptr};
+
+  EXPECT_EQ(nullptr, avb_strv_find_str(strings, "not there", 9));
+  EXPECT_EQ(strings[1], avb_strv_find_str(strings, "abc", 3));
+  EXPECT_EQ(strings[2], avb_strv_find_str(strings, "def", 3));
+  EXPECT_EQ(strings[0], avb_strv_find_str(strings, "abcabc", 6));
+}
+
 TEST(UtilTest, StrReplace) {
   // We don't care about leaking strings from avb_replace().
   EXPECT_EQ("OK blah bah $(FOO OK blah",

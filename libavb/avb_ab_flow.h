@@ -170,6 +170,11 @@ typedef enum {
  * decremented and the A/B metadata is saved to disk before returning.
  * In either case the value AVB_AB_FLOW_RESULT_OK is returning.
  *
+ * The partitions to load is given in |requested_partitions| as a
+ * NULL-terminated array of NUL-terminated strings. Typically the
+ * |requested_partitions| array only contains a single item for the
+ * boot partition, 'boot'.
+ *
  * If an I/O operation - such as loading/saving metadata or checking
  * rollback indexes - fail, the value AVB_AB_FLOW_RESULT_ERROR_IO is
  * returned.
@@ -180,7 +185,9 @@ typedef enum {
  * Reasonable behavior for handling AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS
  * is to initiate device recovery (which is device-dependent).
  */
-AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data);
+AvbABFlowResult avb_ab_flow(AvbOps* ops,
+                            const char* const* requested_partitions,
+                            AvbSlotVerifyData** out_data);
 
 /* Marks the slot with the given slot number as active. Returns
  * AVB_IO_RESULT_OK on success, error code otherwise.

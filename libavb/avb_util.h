@@ -204,6 +204,17 @@ char* avb_strdup(const char* str) AVB_ATTR_WARN_UNUSED_RESULT;
 const char* avb_strstr(const char* haystack,
                        const char* needle) AVB_ATTR_WARN_UNUSED_RESULT;
 
+/* Finds the first occurrence of |str| in the NULL-terminated string
+ * array |strings|. Each element in |strings| must be
+ * NUL-terminated. The string given by |str| need not be
+ * NUL-terminated but its size must be given in |str_size|.
+ *
+ * Returns NULL if not found, otherwise points into |strings| for the
+ * first occurrence of |str|.
+ */
+const char* avb_strv_find_str(const char* const* strings, const char* str,
+                              size_t str_size);
+
 /* Replaces all occurrences of |search| with |replace| in |str|.
  *
  * Returns a newly allocated string or NULL if out of memory.
