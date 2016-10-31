@@ -166,7 +166,7 @@ static AvbIOResult load_metadata(AvbOps* ops, AvbABData* ab_data,
                                  AvbABData* ab_data_orig) {
   AvbIOResult io_ret;
 
-  io_ret = avb_ab_data_read(ops, ab_data);
+  io_ret = ops->read_ab_metadata(ops, ab_data);
   if (io_ret != AVB_IO_RESULT_OK) {
     avb_error("I/O error while loading A/B metadata.\n");
     return io_ret;
@@ -189,7 +189,7 @@ static AvbIOResult save_metadata_if_changed(AvbOps* ops, AvbABData* ab_data,
                                             AvbABData* ab_data_orig) {
   if (avb_safe_memcmp(ab_data, ab_data_orig, sizeof(AvbABData)) != 0) {
     avb_debug("Writing A/B metadata to disk.\n");
-    return avb_ab_data_write(ops, ab_data);
+    return ops->write_ab_metadata(ops, ab_data);
   }
   return AVB_IO_RESULT_OK;
 }

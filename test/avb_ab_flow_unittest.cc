@@ -102,6 +102,8 @@ TEST(ABTest, SupportSameMajorFutureMinorVersion) {
   EXPECT_TRUE(avb_ab_data_verify_and_byteswap(&serialized, &restored));
 }
 
+#define MISC_PART_SIZE 8 * 1024
+
 class AvbABFlowTest : public BaseAvbToolTest {
  public:
   AvbABFlowTest() {}
@@ -115,7 +117,7 @@ class AvbABFlowTest : public BaseAvbToolTest {
     // Create large enough 'misc' partition and initialize it with
     // zeroes.
     std::vector<uint8_t> misc;
-    misc.resize(8 * 1024);
+    misc.resize(MISC_PART_SIZE);
     base::FilePath misc_path = testdir_.Append("misc.img");
     EXPECT_EQ(misc.size(),
               static_cast<const size_t>(base::WriteFile(
@@ -202,7 +204,8 @@ class AvbABFlowTest : public BaseAvbToolTest {
     data.slots[1].priority = b_pri;
     data.slots[1].tries_remaining = b_tries;
     data.slots[1].successful_boot = (b_success ? 1 : 0);
-    EXPECT_EQ(AVB_IO_RESULT_OK, avb_ab_data_write(ops_.avb_ops(), &data));
+    EXPECT_EQ(AVB_IO_RESULT_OK,
+              ops_.avb_ops()->write_ab_metadata(ops_.avb_ops(), &data));
     GenerateSlot(0, a_slot_valid, a_rollback_boot, a_rollback_odm);
     GenerateSlot(1, b_slot_valid, b_rollback_boot, b_rollback_odm);
     ops_.set_stored_rollback_indexes(stored_rollback_indexes);
@@ -211,19 +214,20 @@ class AvbABFlowTest : public BaseAvbToolTest {
   FakeAvbOps ops_;
 };
 
-#define ExpMD(a_pri, a_tries, a_success, b_pri, b_tries, b_success,       \
-              stored_rollback_indexes)                                    \
-  do {                                                                    \
-    AvbABData data;                                                       \
-    EXPECT_EQ(AVB_IO_RESULT_OK, avb_ab_data_read(ops_.avb_ops(), &data)); \
-    EXPECT_EQ(a_pri, data.slots[0].priority);                             \
-    EXPECT_EQ(a_tries, data.slots[0].tries_remaining);                    \
-    EXPECT_EQ(a_success ? 1 : 0, data.slots[0].successful_boot);          \
-    EXPECT_EQ(b_pri, data.slots[1].priority);                             \
-    EXPECT_EQ(b_tries, data.slots[1].tries_remaining);                    \
-    EXPECT_EQ(b_success ? 1 : 0, data.slots[1].successful_boot);          \
-    EXPECT_EQ(std::vector<uint64_t>(stored_rollback_indexes),             \
-              ops_.get_stored_rollback_indexes());                        \
+#define ExpMD(a_pri, a_tries, a_success, b_pri, b_tries, b_success,     \
+              stored_rollback_indexes)                                  \
+  do {                                                                  \
+    AvbABData data;                                                     \
+    EXPECT_EQ(AVB_IO_RESULT_OK,                                         \
+              ops_.avb_ops()->read_ab_metadata(ops_.avb_ops(), &data)); \
+    EXPECT_EQ(a_pri, data.slots[0].priority);                           \
+    EXPECT_EQ(a_tries, data.slots[0].tries_remaining);                  \
+    EXPECT_EQ(a_success ? 1 : 0, data.slots[0].successful_boot);        \
+    EXPECT_EQ(b_pri, data.slots[1].priority);                           \
+    EXPECT_EQ(b_tries, data.slots[1].tries_remaining);                  \
+    EXPECT_EQ(b_success ? 1 : 0, data.slots[1].successful_boot);        \
+    EXPECT_EQ(std::vector<uint64_t>(stored_rollback_indexes),           \
+              ops_.get_stored_rollback_indexes());                      \
   } while (0);
 
 TEST_F(AvbABFlowTest, MetadataReadAndWrite) {
@@ -583,6 +587,68 @@ TEST_F(AvbABFlowTest, MarkSlotSuccessful) {
         std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
 }
 
+static AvbABData my_serialized_data;
+
+static AvbIOResult my_write_ab_metadata(AvbOps* ops,
+                                        const struct AvbABData* data) {
+  avb_ab_data_update_crc_and_byteswap(data, &my_serialized_data);
+  return AVB_IO_RESULT_OK;
+}
+
+static AvbIOResult my_read_ab_metadata(AvbOps* ops, struct AvbABData* data) {
+  if (!avb_ab_data_verify_and_byteswap(&my_serialized_data, data)) {
+    avb_error(
+        "Error validating A/B metadata from persistent storage. "
+        "Resetting and writing new A/B metadata to persistent storage.\n");
+    avb_ab_data_init(data);
+    return my_write_ab_metadata(ops, data);
+  }
+  return AVB_IO_RESULT_OK;
+}
+
+TEST_F(AvbABFlowTest, OtherMetadataStorage) {
+  AvbSlotVerifyData* data;
+  const char* requested_partitions[] = {"boot", NULL};
+
+  // Use our own A/B storage routines (see above).
+  ops_.avb_ops()->read_ab_metadata = my_read_ab_metadata;
+  ops_.avb_ops()->write_ab_metadata = my_write_ab_metadata;
+
+  SetMD(14, 0, 1, true, 0, 0,  // A: pri, tries, success, slot_valid, RIs
+        15, 0, 1, true, 0, 0,  // B: pri, tries, success, slot_valid, RIs
+        {0, 0});               // stored_rollback_indexes
+  EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
+            avb_ab_flow(ops_.avb_ops(), requested_partitions, &data));
+  ExpMD(14, 0, 1,                        // A: pri, tries, successful
+        15, 0, 1,                        // B: pri, tries, successful
+        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+  ASSERT_NE(nullptr, data);
+  EXPECT_EQ("_b", std::string(data->ab_suffix));
+  avb_slot_verify_data_free(data);
+
+  // Also check the other slot.
+  SetMD(15, 0, 1, true, 0, 0,  // A: pri, tries, success, slot_valid, RIs
+        14, 0, 1, true, 0, 0,  // B: pri, tries, success, slot_valid, RIs
+        {0, 0});               // stored_rollback_indexes
+  EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
+            avb_ab_flow(ops_.avb_ops(), requested_partitions, &data));
+  ExpMD(15, 0, 1,                        // A: pri, tries, successful
+        14, 0, 1,                        // B: pri, tries, successful
+        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+  ASSERT_NE(nullptr, data);
+  EXPECT_EQ("_a", std::string(data->ab_suffix));
+  avb_slot_verify_data_free(data);
+
+  // Check that 'misc' hasn't been written to at all.
+  std::string misc_data;
+  base::FilePath misc_path = testdir_.Append("misc.img");
+  ASSERT_TRUE(base::ReadFileToString(misc_path, &misc_data));
+  EXPECT_EQ(size_t(MISC_PART_SIZE), misc_data.size());
+  for (size_t n = 0; n < misc_data.size(); n++) {
+    ASSERT_EQ(uint8_t(misc_data[n]), 0);
+  }
+}
+
 TEST_F(AvbABFlowTest, AvbtoolMetadataGeneratorEmptyFile) {
   AvbABData data;
 
@@ -593,7 +659,8 @@ TEST_F(AvbABFlowTest, AvbtoolMetadataGeneratorEmptyFile) {
                  " --slot_data 13:3:0:11:2:1",
                  misc_path.value().c_str());
 
-  EXPECT_EQ(AVB_IO_RESULT_OK, avb_ab_data_read(ops_.avb_ops(), &data));
+  EXPECT_EQ(AVB_IO_RESULT_OK,
+            ops_.avb_ops()->read_ab_metadata(ops_.avb_ops(), &data));
   EXPECT_EQ(13, data.slots[0].priority);
   EXPECT_EQ(3, data.slots[0].tries_remaining);
   EXPECT_EQ(0, data.slots[0].successful_boot);
@@ -614,7 +681,8 @@ TEST_F(AvbABFlowTest, AvbtoolMetadataGeneratorExistingFile) {
                  " --slot_data 12:2:1:10:5:0",
                  misc_path.value().c_str());
 
-  EXPECT_EQ(AVB_IO_RESULT_OK, avb_ab_data_read(ops_.avb_ops(), &data));
+  EXPECT_EQ(AVB_IO_RESULT_OK,
+            ops_.avb_ops()->read_ab_metadata(ops_.avb_ops(), &data));
   EXPECT_EQ(12, data.slots[0].priority);
   EXPECT_EQ(2, data.slots[0].tries_remaining);
   EXPECT_EQ(1, data.slots[0].successful_boot);

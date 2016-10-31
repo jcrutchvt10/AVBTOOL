@@ -63,6 +63,8 @@ typedef enum {
 struct AvbOps;
 typedef struct AvbOps AvbOps;
 
+struct AvbABData;
+
 /* High-level operations/functions/methods that are platform
  * dependent.
  */
@@ -107,6 +109,28 @@ struct AvbOps {
   AvbIOResult (*write_to_partition)(AvbOps* ops, const char* partition,
                                     int64_t offset, size_t num_bytes,
                                     const void* buffer);
+
+  /* Reads A/B metadata from persistent storage. Returned data is
+   * properly byteswapped. Returns AVB_IO_RESULT_OK on success, error
+   * code otherwise.
+   *
+   * If the data read is invalid (e.g. wrong magic or CRC checksum
+   * failure), the metadata shoule be reset using avb_ab_data_init()
+   * and then written to persistent storage.
+   *
+   * Implementations will typically want to use avb_ab_data_read()
+   * here to use the 'misc' partition for persistent storage.
+   */
+  AvbIOResult (*read_ab_metadata)(AvbOps* ops, struct AvbABData* data);
+
+  /* Writes A/B metadata to persistent storage. This will byteswap and
+   * update the CRC as needed. Returns AVB_IO_RESULT_OK on success,
+   * error code otherwise.
+   *
+   * Implementations will typically want to use avb_ab_data_write()
+   * here to use the 'misc' partition for persistent storage.
+   */
+  AvbIOResult (*write_ab_metadata)(AvbOps* ops, const struct AvbABData* data);
 
   /* Checks if the given public key used to sign the 'vbmeta'
    * partition is trusted. Boot loaders typically compare this with
