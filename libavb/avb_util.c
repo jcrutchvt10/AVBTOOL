@@ -234,6 +234,18 @@ const char* avb_strstr(const char* haystack, const char* needle) {
   return NULL;
 }
 
+const char* avb_strv_find_str(const char* const* strings, const char* str,
+                              size_t str_size) {
+  size_t n;
+  for (n = 0; strings[n] != NULL; n++) {
+    if (avb_strlen(strings[n]) == str_size &&
+        avb_memcmp(strings[n], str, str_size) == 0) {
+      return strings[n];
+    }
+  }
+  return NULL;
+}
+
 char* avb_replace(const char* str, const char* search, const char* replace) {
   char* ret = NULL;
   size_t ret_len = 0;
