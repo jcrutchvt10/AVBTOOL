@@ -36,12 +36,15 @@
  */
 #define PART_NAME_MAX_SIZE 32
 
+/* Maximum number of partitions that can be loaded with avb_slot_verify(). */
+#define MAX_NUMBER_OF_LOADED_PARTITIONS 32
+
 /* Maximum size of a vbmeta image - 64 KiB. */
 #define VBMETA_MAX_SIZE (64 * 1024)
 
 static AvbSlotVerifyResult load_and_verify_hash_partition(
-    AvbOps* ops, const char* ab_suffix, const AvbDescriptor* descriptor,
-    AvbSlotVerifyData* slot_data) {
+    AvbOps* ops, const char* const* requested_partitions, const char* ab_suffix,
+    const AvbDescriptor* descriptor, AvbSlotVerifyData* slot_data) {
   AvbHashDescriptor hash_desc;
   const uint8_t* desc_partition_name;
   const uint8_t* desc_salt;
@@ -53,6 +56,7 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
   size_t part_num_read;
   uint8_t* digest;
   size_t digest_len;
+  const char* found;
 
   if (!avb_hash_descriptor_validate_and_byteswap(
           (const AvbHashDescriptor*)descriptor, &hash_desc)) {
@@ -138,14 +142,22 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
 
   ret = AVB_SLOT_VERIFY_RESULT_OK;
 
-  /* If this is the boot partition, copy to slot_data. */
-  if (hash_desc.partition_name_len == 4 &&
-      avb_memcmp(desc_partition_name, "boot", 4) == 0) {
-    if (slot_data->boot_data != NULL) {
-      avb_free(slot_data->boot_data);
+  /* If this is the requested partition, copy to slot_data. */
+  found =
+      avb_strv_find_str(requested_partitions, (const char*)desc_partition_name,
+                        hash_desc.partition_name_len);
+  if (found != NULL) {
+    AvbPartitionData* loaded_partition;
+    if (slot_data->num_loaded_partitions == MAX_NUMBER_OF_LOADED_PARTITIONS) {
+      avb_errorv(part_name, ": Too many loaded partitions.\n", NULL);
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
     }
-    slot_data->boot_size = hash_desc.image_size;
-    slot_data->boot_data = image_buf;
+    loaded_partition =
+        &slot_data->loaded_partitions[slot_data->num_loaded_partitions++];
+    loaded_partition->partition_name = avb_strdup(found);
+    loaded_partition->data_size = hash_desc.image_size;
+    loaded_partition->data = image_buf;
     image_buf = NULL;
   }
 
@@ -157,10 +169,11 @@ out:
 }
 
 static AvbSlotVerifyResult load_and_verify_vbmeta(
-    AvbOps* ops, const char* ab_suffix, int rollback_index_slot,
-    const char* partition_name, size_t partition_name_len,
-    const uint8_t* expected_public_key, size_t expected_public_key_length,
-    AvbSlotVerifyData* slot_data, AvbAlgorithmType* out_algorithm_type) {
+    AvbOps* ops, const char* const* requested_partitions, const char* ab_suffix,
+    int rollback_index_slot, const char* partition_name,
+    size_t partition_name_len, const uint8_t* expected_public_key,
+    size_t expected_public_key_length, AvbSlotVerifyData* slot_data,
+    AvbAlgorithmType* out_algorithm_type) {
   char full_partition_name[PART_NAME_MAX_SIZE];
   AvbSlotVerifyResult ret;
   AvbIOResult io_ret;
@@ -359,8 +372,8 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     switch (desc.tag) {
       case AVB_DESCRIPTOR_TAG_HASH: {
         AvbSlotVerifyResult sub_ret;
-        sub_ret = load_and_verify_hash_partition(ops, ab_suffix, descriptors[n],
-                                                 slot_data);
+        sub_ret = load_and_verify_hash_partition(
+            ops, requested_partitions, ab_suffix, descriptors[n], slot_data);
         if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
           ret = sub_ret;
           goto out;
@@ -395,9 +408,10 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
         chain_public_key = chain_partition_name + chain_desc.partition_name_len;
 
         sub_ret = load_and_verify_vbmeta(
-            ops, ab_suffix, chain_desc.rollback_index_slot,
-            (const char*)chain_partition_name, chain_desc.partition_name_len,
-            chain_public_key, chain_desc.public_key_len, slot_data,
+            ops, requested_partitions, ab_suffix,
+            chain_desc.rollback_index_slot, (const char*)chain_partition_name,
+            chain_desc.partition_name_len, chain_public_key,
+            chain_desc.public_key_len, slot_data,
             NULL /* out_algorithm_type */);
         if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
           ret = sub_ret;
@@ -642,7 +656,9 @@ static int cmdline_append_hex(AvbSlotVerifyData* slot_data, const char* key,
   return ret;
 }
 
-AvbSlotVerifyResult avb_slot_verify(AvbOps* ops, const char* ab_suffix,
+AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
+                                    const char* const* requested_partitions,
+                                    const char* ab_suffix,
                                     AvbSlotVerifyData** out_data) {
   AvbSlotVerifyResult ret;
   AvbSlotVerifyData* slot_data = NULL;
@@ -658,10 +674,16 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops, const char* ab_suffix,
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
     goto fail;
   }
+  slot_data->loaded_partitions =
+      avb_calloc(sizeof(AvbPartitionData) * MAX_NUMBER_OF_LOADED_PARTITIONS);
+  if (slot_data->loaded_partitions == NULL) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto fail;
+  }
 
   ret = load_and_verify_vbmeta(
-      ops, ab_suffix, 0 /* rollback_index_slot */, "vbmeta",
-      avb_strlen("vbmeta"), NULL /* expected_public_key */,
+      ops, requested_partitions, ab_suffix, 0 /* rollback_index_slot */,
+      "vbmeta", avb_strlen("vbmeta"), NULL /* expected_public_key */,
       0 /* expected_public_key_length */, slot_data, &algorithm_type);
 
   /* If things check out, mangle the kernel command-line as needed. */
@@ -776,11 +798,24 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data) {
   if (data->ab_suffix != NULL) {
     avb_free(data->ab_suffix);
   }
-  if (data->boot_data != NULL) {
-    avb_free(data->boot_data);
+  if (data->vbmeta_data != NULL) {
+    avb_free(data->vbmeta_data);
   }
   if (data->cmdline != NULL) {
     avb_free(data->cmdline);
+  }
+  if (data->loaded_partitions != NULL) {
+    size_t n;
+    for (n = 0; n < data->num_loaded_partitions; n++) {
+      AvbPartitionData* loaded_partition = &data->loaded_partitions[n];
+      if (loaded_partition->partition_name != NULL) {
+        avb_free(loaded_partition->partition_name);
+      }
+      if (loaded_partition->data != NULL) {
+        avb_free(loaded_partition->data);
+      }
+    }
+    avb_free(data->loaded_partitions);
   }
   avb_free(data);
 }

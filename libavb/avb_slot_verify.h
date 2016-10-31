@@ -58,21 +58,37 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result);
 /* Maximum number of rollback index slots number supported. */
 #define AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS 32
 
+/* AvbPartitionData contains data loaded from partitions when using
+ * avb_slot_verify(). The |partition_name| field contains the name of
+ * the partition, |data| points to the loaded data which is
+ * |data_size| bytes long.
+ *
+ * Note that this is strictly less than the partition size - it's only
+ * the image stored there, not the entire partition nor any of the
+ * metadata.
+ */
+typedef struct {
+  char* partition_name;
+  uint8_t* data;
+  size_t data_size;
+} AvbPartitionData;
+
 /* AvbSlotVerifyData contains data needed to boot a particular slot
  * and is returned by avb_slot_verify() if partitions in a slot are
  * successfully verified.
  *
- * All data pointed to by this struct will be freed when the
+ * All data pointed to by this struct - including data in each item in
+ * the |partitions| array - will be freed when the
  * avb_slot_verify_data_free() function is called.
  *
  * The |ab_suffix| field is the copy of the of |ab_suffix| field
  * passed to avb_slot_verify(). It is the A/B suffix of the slot.
  *
- * The image loaded and verified from the boot partition of the slot
- * is accessible via the |boot_data| and is of length |boot_size|
- * bytes. Note that this is strictly less than the partition size -
- * it's only the image stored there, not the entire partition nor any
- * of the metadata.
+ * The partitions loaded and verified from from the slot are
+ * accessible in the |loaded_partitions| array. The field
+ * |num_loaded_partitions| contains the number of elements in this
+ * array. The order of partitions in this array may not necessarily be
+ * the same order as in the passed-in |requested_partitions| array.
  *
  * The verified vbmeta image in the 'vbmeta' partition of the slot is
  * accessible from the |vbmeta_data| field and is of length
@@ -101,13 +117,16 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result);
  *
  *   androidboot.vbmeta.{hash_alg, size, digest}: Will be set to
  *   the digest of the vbmeta image.
+ *
+ * This struct may grow in the future without it being considered an
+ * ABI break.
  */
 typedef struct {
   char* ab_suffix;
-  uint8_t* boot_data;
-  size_t boot_size;
   uint8_t* vbmeta_data;
   size_t vbmeta_size;
+  AvbPartitionData* loaded_partitions;
+  size_t num_loaded_partitions;
   char* cmdline;
   uint64_t rollback_indexes[AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS];
 } AvbSlotVerifyData;
@@ -115,14 +134,20 @@ typedef struct {
 /* Frees a |AvbSlotVerifyData| including all data it points to. */
 void avb_slot_verify_data_free(AvbSlotVerifyData* data);
 
-/* Performs a full verification of the slot identified by
- * |ab_suffix|. If not using A/B, pass an empty string (e.g. "", not
- * NULL) for |ab_suffix|.
+/* Performs a full verification of the slot identified by |ab_suffix|
+ * and load the contents of the partitions whose name is in the
+ * NULL-terminated string array |requested_partitions| (each partition
+ * must use hash verification). If not using A/B, pass an empty string
+ * (e.g. "", not NULL) for |ab_suffix|.
  *
- * This includes loading data from the 'vbmeta', 'boot', and possibly
- * other partitions (with |ab_suffix| appended), inspecting rollback
- * indexes, and checking if the public key used to sign the data is
- * acceptable. The functions in |ops| will be used to do this.
+ * Typically the |requested_partitions| array only contains a single
+ * item for the boot partition, 'boot'.
+ *
+ * Verification includes loading data from the 'vbmeta', all hash
+ * partitions, and possibly other partitions (with |ab_suffix|
+ * appended), inspecting rollback indexes, and checking if the public
+ * key used to sign the data is acceptable. The functions in |ops|
+ * will be used to do this.
  *
  * If |out_data| is not NULL, it will be set to a newly allocated
  * |AvbSlotVerifyData| struct containing all the data needed to
@@ -153,7 +178,9 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
  * AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA is returned if some
  * of the metadata is invalid or inconsistent.
  */
-AvbSlotVerifyResult avb_slot_verify(AvbOps* ops, const char* ab_suffix,
+AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
+                                    const char* const* requested_partitions,
+                                    const char* ab_suffix,
                                     AvbSlotVerifyData** out_data);
 
 #ifdef __cplusplus

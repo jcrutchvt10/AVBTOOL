@@ -194,7 +194,9 @@ static AvbIOResult save_metadata_if_changed(AvbOps* ops, AvbABData* ab_data,
   return AVB_IO_RESULT_OK;
 }
 
-AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data) {
+AvbABFlowResult avb_ab_flow(AvbOps* ops,
+                            const char* const* requested_partitions,
+                            AvbSlotVerifyData** out_data) {
   AvbSlotVerifyData* slot_data[2] = {NULL, NULL};
   AvbSlotVerifyData* data = NULL;
   AvbABFlowResult ret;
@@ -215,7 +217,8 @@ AvbABFlowResult avb_ab_flow(AvbOps* ops, AvbSlotVerifyData** out_data) {
   for (n = 0; n < 2; n++) {
     if (slot_is_bootable(&ab_data.slots[n])) {
       AvbSlotVerifyResult verify_result;
-      verify_result = avb_slot_verify(ops, slot_suffixes[n], &slot_data[n]);
+      verify_result = avb_slot_verify(ops, requested_partitions,
+                                      slot_suffixes[n], &slot_data[n]);
       if (verify_result != AVB_SLOT_VERIFY_RESULT_OK) {
         if (verify_result == AVB_SLOT_VERIFY_RESULT_ERROR_OOM) {
           ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
