@@ -31,15 +31,17 @@
 
 #include "avb_ops_device.h"
 
+static AvbABOps* ab_ops = NULL;
 static AvbOps* ops = NULL;
 
 static void module_init(boot_control_module_t* module) {
-  if (ops != NULL) return;
+  if (ab_ops != NULL) return;
 
-  ops = avb_ops_device_new();
-  if (ops == NULL) {
+  ab_ops = avb_ops_device_new();
+  if (ab_ops == NULL) {
     avb_error("Unable to allocate AvbOps instance.\n");
   }
+  ops = &(ab_ops->ops);
 }
 
 static unsigned int module_getNumberSlots(boot_control_module_t* module) {
@@ -62,7 +64,7 @@ static unsigned int module_getCurrentSlot(boot_control_module_t* module) {
 }
 
 static int module_markBootSuccessful(boot_control_module_t* module) {
-  if (avb_ab_mark_slot_successful(ops, module_getCurrentSlot(module)) ==
+  if (avb_ab_mark_slot_successful(ab_ops, module_getCurrentSlot(module)) ==
       AVB_IO_RESULT_OK) {
     return 0;
   } else {
@@ -72,7 +74,7 @@ static int module_markBootSuccessful(boot_control_module_t* module) {
 
 static int module_setActiveBootSlot(boot_control_module_t* module,
                                     unsigned int slot) {
-  if (avb_ab_mark_slot_active(ops, slot) == AVB_IO_RESULT_OK) {
+  if (avb_ab_mark_slot_active(ab_ops, slot) == AVB_IO_RESULT_OK) {
     return 0;
   } else {
     return -EIO;
@@ -81,7 +83,7 @@ static int module_setActiveBootSlot(boot_control_module_t* module,
 
 static int module_setSlotAsUnbootable(struct boot_control_module* module,
                                       unsigned int slot) {
-  if (avb_ab_mark_slot_unbootable(ops, slot) == AVB_IO_RESULT_OK) {
+  if (avb_ab_mark_slot_unbootable(ab_ops, slot) == AVB_IO_RESULT_OK) {
     return 0;
   } else {
     return -EIO;
@@ -95,7 +97,7 @@ static int module_isSlotBootable(struct boot_control_module* module,
 
   avb_assert(slot < 2);
 
-  if (avb_ab_data_read(ops, &ab_data) != AVB_IO_RESULT_OK) {
+  if (avb_ab_data_read(ab_ops, &ab_data) != AVB_IO_RESULT_OK) {
     return -EIO;
   }
 
@@ -113,7 +115,7 @@ static int module_isSlotMarkedSuccessful(struct boot_control_module* module,
 
   avb_assert(slot < 2);
 
-  if (avb_ab_data_read(ops, &ab_data) != AVB_IO_RESULT_OK) {
+  if (avb_ab_data_read(ab_ops, &ab_data) != AVB_IO_RESULT_OK) {
     return -EIO;
   }
 
