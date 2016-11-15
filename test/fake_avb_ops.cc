@@ -180,7 +180,7 @@ AvbIOResult FakeAvbOps::get_unique_guid_for_partition(AvbOps* ops,
 }
 
 struct FakeAvbOpsC {
-  AvbOps parent;
+  AvbABOps parent;
   FakeAvbOps* my_ops;
 };
 
@@ -241,14 +241,14 @@ static AvbIOResult my_ops_get_unique_guid_for_partition(AvbOps* ops,
 
 FakeAvbOps::FakeAvbOps() {
   avb_ops_ = new FakeAvbOpsC;
-  avb_ops_->parent.read_from_partition = my_ops_read_from_partition;
-  avb_ops_->parent.write_to_partition = my_ops_write_to_partition;
-  avb_ops_->parent.validate_vbmeta_public_key =
+  avb_ops_->parent.ops.read_from_partition = my_ops_read_from_partition;
+  avb_ops_->parent.ops.write_to_partition = my_ops_write_to_partition;
+  avb_ops_->parent.ops.validate_vbmeta_public_key =
       my_ops_validate_vbmeta_public_key;
-  avb_ops_->parent.read_rollback_index = my_ops_read_rollback_index;
-  avb_ops_->parent.write_rollback_index = my_ops_write_rollback_index;
-  avb_ops_->parent.read_is_device_unlocked = my_ops_read_is_device_unlocked;
-  avb_ops_->parent.get_unique_guid_for_partition =
+  avb_ops_->parent.ops.read_rollback_index = my_ops_read_rollback_index;
+  avb_ops_->parent.ops.write_rollback_index = my_ops_write_rollback_index;
+  avb_ops_->parent.ops.read_is_device_unlocked = my_ops_read_is_device_unlocked;
+  avb_ops_->parent.ops.get_unique_guid_for_partition =
       my_ops_get_unique_guid_for_partition;
   // Just use the built-in A/B metadata read/write routines.
   avb_ops_->parent.read_ab_metadata = avb_ab_data_read;
