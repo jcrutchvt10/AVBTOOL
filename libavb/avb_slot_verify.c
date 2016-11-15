@@ -286,6 +286,10 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     goto out;
   }
 
+  /* Byteswap the header. */
+  avb_vbmeta_image_header_to_host_byte_order((AvbVBMetaImageHeader*)vbmeta_buf,
+                                             &vbmeta_header);
+
   /* Check if key used to make signature matches what is expected. */
   if (expected_public_key != NULL) {
     avb_assert(!is_main_vbmeta);
@@ -300,10 +304,19 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     }
   } else {
     bool key_is_trusted = false;
+    const uint8_t* pk_metadata = NULL;
+    size_t pk_metadata_len = 0;
+
+    if (vbmeta_header.public_key_metadata_size > 0) {
+      pk_metadata = vbmeta_buf + sizeof(AvbVBMetaImageHeader) +
+                    vbmeta_header.authentication_data_block_size +
+                    vbmeta_header.public_key_metadata_offset;
+      pk_metadata_len = vbmeta_header.public_key_metadata_size;
+    }
 
     avb_assert(is_main_vbmeta);
-    io_ret =
-        ops->validate_vbmeta_public_key(ops, pk_data, pk_len, &key_is_trusted);
+    io_ret = ops->validate_vbmeta_public_key(ops, pk_data, pk_len, pk_metadata,
+                                             pk_metadata_len, &key_is_trusted);
     if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
       goto out;
@@ -321,9 +334,6 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
       goto out;
     }
   }
-
-  avb_vbmeta_image_header_to_host_byte_order((AvbVBMetaImageHeader*)vbmeta_buf,
-                                             &vbmeta_header);
 
   /* Check rollback index. */
   io_ret = ops->read_rollback_index(ops, rollback_index_slot,

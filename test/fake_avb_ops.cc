@@ -129,11 +129,17 @@ AvbIOResult FakeAvbOps::write_to_partition(const char* partition,
 
 AvbIOResult FakeAvbOps::validate_vbmeta_public_key(
     AvbOps* ops, const uint8_t* public_key_data, size_t public_key_length,
+    const uint8_t* public_key_metadata, size_t public_key_metadata_length,
     bool* out_key_is_trusted) {
   if (out_key_is_trusted != NULL) {
-    *out_key_is_trusted = (public_key_length == expected_public_key_.size() &&
-                           (memcmp(expected_public_key_.c_str(),
-                                   public_key_data, public_key_length) == 0));
+    bool pk_matches = (public_key_length == expected_public_key_.size() &&
+                       (memcmp(expected_public_key_.c_str(), public_key_data,
+                               public_key_length) == 0));
+    bool pkmd_matches =
+        (public_key_metadata_length == expected_public_key_metadata_.size() &&
+         (memcmp(expected_public_key_metadata_.c_str(), public_key_metadata,
+                 public_key_metadata_length) == 0));
+    *out_key_is_trusted = pk_matches && pkmd_matches;
   }
   return AVB_IO_RESULT_OK;
 }
@@ -203,10 +209,12 @@ static AvbIOResult my_ops_write_to_partition(AvbOps* ops, const char* partition,
 
 static AvbIOResult my_ops_validate_vbmeta_public_key(
     AvbOps* ops, const uint8_t* public_key_data, size_t public_key_length,
+    const uint8_t* public_key_metadata, size_t public_key_metadata_length,
     bool* out_key_is_trusted) {
   return ((FakeAvbOpsC*)ops)
       ->my_ops->validate_vbmeta_public_key(
-          ops, public_key_data, public_key_length, out_key_is_trusted);
+          ops, public_key_data, public_key_length, public_key_metadata,
+          public_key_metadata_length, out_key_is_trusted);
 }
 
 static AvbIOResult my_ops_read_rollback_index(AvbOps* ops,

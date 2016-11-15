@@ -51,6 +51,11 @@ class FakeAvbOps {
     expected_public_key_ = expected_public_key;
   }
 
+  void set_expected_public_key_metadata(
+      const std::string& expected_public_key_metadata) {
+    expected_public_key_metadata_ = expected_public_key_metadata;
+  }
+
   void set_stored_rollback_indexes(
       const std::vector<uint64_t>& stored_rollback_indexes) {
     stored_rollback_indexes_ = stored_rollback_indexes;
@@ -74,6 +79,8 @@ class FakeAvbOps {
   AvbIOResult validate_vbmeta_public_key(AvbOps* ops,
                                          const uint8_t* public_key_data,
                                          size_t public_key_length,
+                                         const uint8_t* public_key_metadata,
+                                         size_t public_key_metadata_length,
                                          bool* out_key_is_trusted);
 
   AvbIOResult read_rollback_index(AvbOps* ops, size_t rollback_index_slot,
@@ -95,6 +102,7 @@ class FakeAvbOps {
   base::FilePath partition_dir_;
 
   std::string expected_public_key_;
+  std::string expected_public_key_metadata_;
 
   std::vector<uint64_t> stored_rollback_indexes_;
 
