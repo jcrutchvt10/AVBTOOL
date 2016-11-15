@@ -1,4 +1,4 @@
-This directory contains avbtool and libavb.
+This directory contains avbtool, libavb, and libavb_ab.
 
 The main job of avbtool is to create vbmeta.img which is the
 top-level object for verified boot. This image is designed to go into
@@ -28,37 +28,49 @@ the boot partition for verification.
 The libavb library is intended to be used in both boot loaders and
 inside Android. It has a simple abstraction for system dependencies
 (see libavb/avb_sysdeps.h) as well as operations that the boot loader
-or OS is expected to implement (see libavb/avb_ops.h).
+or OS is expected to implement (see libavb/avb_ops.h). The main entry
+point for verification is avb_slot_verify().
 
-In addition to handling verified boot, libavb also takes care of A/B
-selection including managing rollback indexes. The bootloader can use
-this through the avb_ab_flow() function.
+It is expected that most devices will use A/B (e.g. multiple copies of
+the OS in separate so-called 'slots') in addition to AVB. While
+managing A/B metadata and associated metadata (e.g. managing
+stored_rollback_index[n] locations) is outside the scope of libavb,
+enough interfaces are exposed so the boot loader can integrate its A/B
+stack with libavb. In particular avb_slot_verify() takes a
+|slot_suffix| parameter and its result struct |AvbSlotVerifyData|
+convey the rollback indexes in the image that was verified.
 
-A/B metadata is stored in the 'misc' partition in the |slot_suffix|
-field using a format private to libavb. For more information about the
-misc.img file format see the bootable/recovery/bootloader.h file. A/B
-metadata can be written to misc.img using the set_ab_metadata
-sub-command. A/B metadata is comprised of (for each slot) a priority
-field (0 to 15), number of tries remaining for attempting to boot the
-slot (0 to 7), and a flag to indicate whether the slot has
-successfully booted.
+AVB also includes an A/B implementation that boot loaders may
+optionally use. This implementation is in the libavb_ab library and
+integrates with image verification including updating the
+stored_rollback_index[n] locations on the device as needed. The
+bootloader can use this through the avb_ab_flow() function. This
+library is built on top of libavb.
+
+In libavb_ab, A/B metadata is stored in the 'misc' partition using a
+format private to libavb_ab in the location on 'misc' reserved for
+this. For more information about the misc.img file format see the
+bootable/recovery/bootloader.h file. A/B metadata can be written to
+misc.img using the set_ab_metadata sub-command of avbtool. A/B
+metadata is comprised of (for each slot) a priority field (0 to 15),
+number of tries remaining for attempting to boot the slot (0 to 7),
+and a flag to indicate whether the slot has successfully booted.
 
 A/B metadata integrity is provided by a simple magic marker and a
 CRC-32 checksum. If invalid A/B metadata is detected, the behavior is
 to reset the A/B metadata to a known state where both slots are given
 seven boot tries.
 
-An implementation of the boot_control HAL using AVB-specific A/B
+An implementation of a boot_control HAL using AVB-specific A/B
 metadata is also provided.
 
 -- FILES AND DIRECTORIES
 
  libavb/
 
-   An implementation for image verification and A/B selection. This
-   code is designed to be highly portable so it can be used in as many
-   contexts as possible. This code requires a C99-compliant C
-   compiler.
+   An implementation of image verification. This code is designed to
+   be highly portable so it can be used in as many contexts as
+   possible. This code requires a C99-compliant C compiler.
 
    Part of this code is considered internal to the implementation and
    should not be used outside it. For example, this applies to the
@@ -68,10 +80,21 @@ metadata is also provided.
    defined in avb_sysdeps.h. If the platform provides the standard C
    runtime avb_sysdeps_posix.c can be used.
 
+ libavb_ab/
+
+   An A/B implementation for use in boot loaders. This is built on top
+   of libavb.
+
+
+ boot_control/
+
+   An implemementation of the Android boot_control HAL for use with
+   boot loaders using libavb_ab.
+
  Android.mk
 
-   Build instructions for building libavb_host (for unit tests),
-   libavb (for use on the device) and associated unit tests.
+   Build instructions for building libavb (a static library for use on
+   the device), host-side libraries (for unit tests), and unit tests.
 
  avbtool
 
@@ -80,7 +103,7 @@ metadata is also provided.
 
  test/
 
-   Contains unit tests for abvtool and libavb.
+   Contains unit tests for abvtool, libavb, and libavb_ab.
 
 -- AUDIENCE AND PORTABILITY NOTES
 
@@ -89,9 +112,10 @@ Android. The suggested approach is to copy the appropriate header and
 C files mentioned in the previous section into the boot loader and
 integrate as appropriate.
 
-The libavb/ codebase will evolve over time so integration should be as
-non-invasive as possible. The intention is to keep the API of the
-library stable however it will be broken if necessary.
+The libavb/ and libavb_ab/ codebase will evolve over time so
+integration should be as non-invasive as possible. The intention is to
+keep the API of the library stable however it will be broken if
+necessary.
 
 As for portability, the library is intended to be highly portable,
 work on both little- and big-endian architectures and 32- and
@@ -103,15 +127,18 @@ include useful debug information and run-time checks. Production
 builds should not use this.
 
 The preprocessor symbol AVB_COMPILATION should be set only when
-compiling the library. The code must be compiled into a separate
-library.
+compiling the libraries. The code must be compiled into a separate
+libraries.
 
-Applications using the compiled library must only include the
+Applications using the compiled libavb library must only include the
 libavb/libavb.h file (which will include all public interfaces) and
 must not have the AVB_COMPILATION preprocessor symbol set. This is to
 ensure that internal code that may be change in the future (for
 example avb_sha.[ch] and avb_rsa.[ch]) will not be visible to
 application code.
+
+Applications using the compiled libavb_ab library must only include
+the libavb_ab/libavb_ab.h file for similar reasons.
 
 -- COMPATIBILITY NOTES
 

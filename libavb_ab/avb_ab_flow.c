@@ -23,7 +23,6 @@
  */
 
 #include "avb_ab_flow.h"
-#include "avb_util.h"
 
 bool avb_ab_data_verify_and_byteswap(const AvbABData* src, AvbABData* dest) {
   /* Ensure magic is correct. */
@@ -81,7 +80,8 @@ void avb_ab_data_init(AvbABData* data) {
  */
 #define AB_METADATA_MISC_PARTITION_OFFSET 2048
 
-AvbIOResult avb_ab_data_read(AvbOps* ops, AvbABData* data) {
+AvbIOResult avb_ab_data_read(AvbABOps* ab_ops, AvbABData* data) {
+  AvbOps* ops = &(ab_ops->ops);
   AvbABData serialized;
   AvbIOResult io_ret;
   size_t num_bytes_read;
@@ -102,13 +102,14 @@ AvbIOResult avb_ab_data_read(AvbOps* ops, AvbABData* data) {
         "Error validating A/B metadata from disk. "
         "Resetting and writing new A/B metadata to disk.\n");
     avb_ab_data_init(data);
-    return avb_ab_data_write(ops, data);
+    return avb_ab_data_write(ab_ops, data);
   }
 
   return AVB_IO_RESULT_OK;
 }
 
-AvbIOResult avb_ab_data_write(AvbOps* ops, const AvbABData* data) {
+AvbIOResult avb_ab_data_write(AvbABOps* ab_ops, const AvbABData* data) {
+  AvbOps* ops = &(ab_ops->ops);
   AvbABData serialized;
   AvbIOResult io_ret;
 
@@ -162,11 +163,11 @@ static const char* slot_suffixes[2] = {"_a", "_b"};
 /* Helper function to load metadata - returns AVB_IO_RESULT_OK on
  * success, error code otherwise.
  */
-static AvbIOResult load_metadata(AvbOps* ops, AvbABData* ab_data,
+static AvbIOResult load_metadata(AvbABOps* ab_ops, AvbABData* ab_data,
                                  AvbABData* ab_data_orig) {
   AvbIOResult io_ret;
 
-  io_ret = ops->read_ab_metadata(ops, ab_data);
+  io_ret = ab_ops->read_ab_metadata(ab_ops, ab_data);
   if (io_ret != AVB_IO_RESULT_OK) {
     avb_error("I/O error while loading A/B metadata.\n");
     return io_ret;
@@ -185,18 +186,20 @@ static AvbIOResult load_metadata(AvbOps* ops, AvbABData* ab_data,
 /* Writes A/B metadata to disk only if it has changed - returns
  * AVB_IO_RESULT_OK on success, error code otherwise.
  */
-static AvbIOResult save_metadata_if_changed(AvbOps* ops, AvbABData* ab_data,
+static AvbIOResult save_metadata_if_changed(AvbABOps* ab_ops,
+                                            AvbABData* ab_data,
                                             AvbABData* ab_data_orig) {
   if (avb_safe_memcmp(ab_data, ab_data_orig, sizeof(AvbABData)) != 0) {
     avb_debug("Writing A/B metadata to disk.\n");
-    return ops->write_ab_metadata(ops, ab_data);
+    return ab_ops->write_ab_metadata(ab_ops, ab_data);
   }
   return AVB_IO_RESULT_OK;
 }
 
-AvbABFlowResult avb_ab_flow(AvbOps* ops,
+AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
                             const char* const* requested_partitions,
                             AvbSlotVerifyData** out_data) {
+  AvbOps* ops = &(ab_ops->ops);
   AvbSlotVerifyData* slot_data[2] = {NULL, NULL};
   AvbSlotVerifyData* data = NULL;
   AvbABFlowResult ret;
@@ -204,7 +207,7 @@ AvbABFlowResult avb_ab_flow(AvbOps* ops,
   size_t slot_index_to_boot, n;
   AvbIOResult io_ret;
 
-  io_ret = load_metadata(ops, &ab_data, &ab_data_orig);
+  io_ret = load_metadata(ab_ops, &ab_data, &ab_data_orig);
   if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
     ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
     goto out;
@@ -311,7 +314,7 @@ AvbABFlowResult avb_ab_flow(AvbOps* ops,
   }
 
 out:
-  io_ret = save_metadata_if_changed(ops, &ab_data, &ab_data_orig);
+  io_ret = save_metadata_if_changed(ab_ops, &ab_data, &ab_data_orig);
   if (io_ret != AVB_IO_RESULT_OK) {
     if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
       ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
@@ -341,14 +344,15 @@ out:
   return ret;
 }
 
-AvbIOResult avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number) {
+AvbIOResult avb_ab_mark_slot_active(AvbABOps* ab_ops,
+                                    unsigned int slot_number) {
   AvbABData ab_data, ab_data_orig;
   unsigned int other_slot_number;
   AvbIOResult ret;
 
   avb_assert(slot_number < 2);
 
-  ret = load_metadata(ops, &ab_data, &ab_data_orig);
+  ret = load_metadata(ab_ops, &ab_data, &ab_data_orig);
   if (ret != AVB_IO_RESULT_OK) {
     goto out;
   }
@@ -368,18 +372,19 @@ AvbIOResult avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number) {
 
 out:
   if (ret == AVB_IO_RESULT_OK) {
-    ret = save_metadata_if_changed(ops, &ab_data, &ab_data_orig);
+    ret = save_metadata_if_changed(ab_ops, &ab_data, &ab_data_orig);
   }
   return ret;
 }
 
-AvbIOResult avb_ab_mark_slot_unbootable(AvbOps* ops, unsigned int slot_number) {
+AvbIOResult avb_ab_mark_slot_unbootable(AvbABOps* ab_ops,
+                                        unsigned int slot_number) {
   AvbABData ab_data, ab_data_orig;
   AvbIOResult ret;
 
   avb_assert(slot_number < 2);
 
-  ret = load_metadata(ops, &ab_data, &ab_data_orig);
+  ret = load_metadata(ab_ops, &ab_data, &ab_data_orig);
   if (ret != AVB_IO_RESULT_OK) {
     goto out;
   }
@@ -390,18 +395,19 @@ AvbIOResult avb_ab_mark_slot_unbootable(AvbOps* ops, unsigned int slot_number) {
 
 out:
   if (ret == AVB_IO_RESULT_OK) {
-    ret = save_metadata_if_changed(ops, &ab_data, &ab_data_orig);
+    ret = save_metadata_if_changed(ab_ops, &ab_data, &ab_data_orig);
   }
   return ret;
 }
 
-AvbIOResult avb_ab_mark_slot_successful(AvbOps* ops, unsigned int slot_number) {
+AvbIOResult avb_ab_mark_slot_successful(AvbABOps* ab_ops,
+                                        unsigned int slot_number) {
   AvbABData ab_data, ab_data_orig;
   AvbIOResult ret;
 
   avb_assert(slot_number < 2);
 
-  ret = load_metadata(ops, &ab_data, &ab_data_orig);
+  ret = load_metadata(ab_ops, &ab_data, &ab_data_orig);
   if (ret != AVB_IO_RESULT_OK) {
     goto out;
   }
@@ -419,7 +425,7 @@ AvbIOResult avb_ab_mark_slot_successful(AvbOps* ops, unsigned int slot_number) {
 
 out:
   if (ret == AVB_IO_RESULT_OK) {
-    ret = save_metadata_if_changed(ops, &ab_data, &ab_data_orig);
+    ret = save_metadata_if_changed(ab_ops, &ab_data, &ab_data_orig);
   }
   return ret;
 }

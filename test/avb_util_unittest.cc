@@ -26,7 +26,7 @@
 
 #include <gtest/gtest.h>
 
-#include "libavb.h"
+#include <libavb/libavb.h>
 
 TEST(UtilTest, RSAPublicKeyHeaderByteswap) {
   AvbRSAPublicKeyHeader h;
