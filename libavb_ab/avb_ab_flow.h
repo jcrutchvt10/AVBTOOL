@@ -22,16 +22,14 @@
  * SOFTWARE.
  */
 
-#if !defined(AVB_INSIDE_LIBAVB_H) && !defined(AVB_COMPILATION)
-#error "Never include this file directly, include libavb.h instead."
+#if !defined(AVB_INSIDE_LIBAVB_AB_H) && !defined(AVB_COMPILATION)
+#error "Never include this file directly, include libavb/libavb_ab.h instead."
 #endif
 
 #ifndef AVB_AB_FLOW_H_
 #define AVB_AB_FLOW_H_
 
-#include "avb_ops.h"
-#include "avb_slot_verify.h"
-#include "avb_vbmeta_image.h"
+#include "avb_ab_ops.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -125,13 +123,13 @@ void avb_ab_data_init(AvbABData* data);
  * checksum failure), the metadata will be reset using
  * avb_ab_data_init() and then written to disk.
  */
-AvbIOResult avb_ab_data_read(AvbOps* ops, AvbABData* data);
+AvbIOResult avb_ab_data_read(AvbABOps* ab_ops, AvbABData* data);
 
 /* Writes A/B metadata to the 'misc' partition using |ops|. This will
  * byteswap and update the CRC as needed. Returns AVB_IO_RESULT_OK on
  * success, error code otherwise.
  */
-AvbIOResult avb_ab_data_write(AvbOps* ops, const AvbABData* data);
+AvbIOResult avb_ab_data_write(AvbABOps* ab_ops, const AvbABData* data);
 
 /* Return codes used in avb_ab_flow(), see that function for
  * documentation of each value.
@@ -186,7 +184,7 @@ typedef enum {
  * Reasonable behavior for handling AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS
  * is to initiate device recovery (which is device-dependent).
  */
-AvbABFlowResult avb_ab_flow(AvbOps* ops,
+AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
                             const char* const* requested_partitions,
                             AvbSlotVerifyData** out_data);
 
@@ -197,7 +195,7 @@ AvbABFlowResult avb_ab_flow(AvbOps* ops,
  * an update. It can also used by the firmware for implementing the
  * "set_active" command.
  */
-AvbIOResult avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number);
+AvbIOResult avb_ab_mark_slot_active(AvbABOps* ab_ops, unsigned int slot_number);
 
 /* Marks the slot with the given slot number as unbootable. Returns
  * AVB_IO_RESULT_OK on success, error code otherwise.
@@ -205,7 +203,8 @@ AvbIOResult avb_ab_mark_slot_active(AvbOps* ops, unsigned int slot_number);
  * This function is typically used by the OS updater before writing to
  * a slot.
  */
-AvbIOResult avb_ab_mark_slot_unbootable(AvbOps* ops, unsigned int slot_number);
+AvbIOResult avb_ab_mark_slot_unbootable(AvbABOps* ab_ops,
+                                        unsigned int slot_number);
 
 /* Marks the slot with the given slot number as having booted
  * successfully. Returns AVB_IO_RESULT_OK on success, error code
@@ -217,7 +216,8 @@ AvbIOResult avb_ab_mark_slot_unbootable(AvbOps* ops, unsigned int slot_number);
  * This function is typically used by the OS updater after having
  * confirmed that the slot works as intended.
  */
-AvbIOResult avb_ab_mark_slot_successful(AvbOps* ops, unsigned int slot_number);
+AvbIOResult avb_ab_mark_slot_successful(AvbABOps* ab_ops,
+                                        unsigned int slot_number);
 
 #ifdef __cplusplus
 }

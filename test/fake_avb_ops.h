@@ -29,7 +29,7 @@
 #include <string>
 #include <vector>
 
-#include "libavb.h"
+#include <libavb_ab/libavb_ab.h>
 
 struct FakeAvbOpsC;
 typedef struct FakeAvbOpsC FakeAvbOpsC;
@@ -40,6 +40,8 @@ class FakeAvbOps {
   ~FakeAvbOps();
 
   AvbOps* avb_ops() { return (AvbOps*)avb_ops_; }
+
+  AvbABOps* avb_ab_ops() { return (AvbABOps*)avb_ops_; }
 
   void set_partition_dir(const base::FilePath& partition_dir) {
     partition_dir_ = partition_dir;

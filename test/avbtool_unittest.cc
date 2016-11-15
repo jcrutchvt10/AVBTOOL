@@ -33,9 +33,10 @@
 #include <base/strings/string_util.h>
 #include <base/strings/stringprintf.h>
 
-#include "avb_sha.h"
+#include <libavb/avb_sha.h>
+#include <libavb/libavb.h>
+
 #include "avb_unittest_util.h"
-#include "libavb.h"
 
 class AvbToolTest : public BaseAvbToolTest {
  public:
