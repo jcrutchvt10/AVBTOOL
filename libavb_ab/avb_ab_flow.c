@@ -198,6 +198,7 @@ static AvbIOResult save_metadata_if_changed(AvbABOps* ab_ops,
 
 AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
                             const char* const* requested_partitions,
+                            bool allow_verification_error,
                             AvbSlotVerifyData** out_data) {
   AvbOps* ops = &(ab_ops->ops);
   AvbSlotVerifyData* slot_data[2] = {NULL, NULL};
@@ -206,6 +207,7 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
   AvbABData ab_data, ab_data_orig;
   size_t slot_index_to_boot, n;
   AvbIOResult io_ret;
+  bool saw_and_allowed_verification_error = false;
 
   io_ret = load_metadata(ab_ops, &ab_data, &ab_data_orig);
   if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
@@ -220,17 +222,47 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
   for (n = 0; n < 2; n++) {
     if (slot_is_bootable(&ab_data.slots[n])) {
       AvbSlotVerifyResult verify_result;
-      verify_result = avb_slot_verify(ops, requested_partitions,
-                                      slot_suffixes[n], &slot_data[n]);
-      if (verify_result != AVB_SLOT_VERIFY_RESULT_OK) {
-        if (verify_result == AVB_SLOT_VERIFY_RESULT_ERROR_OOM) {
+      bool set_slot_unbootable = false;
+
+      verify_result =
+          avb_slot_verify(ops, requested_partitions, slot_suffixes[n],
+                          allow_verification_error, &slot_data[n]);
+      switch (verify_result) {
+        case AVB_SLOT_VERIFY_RESULT_ERROR_OOM:
           ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
           goto out;
-        }
-        if (verify_result == AVB_SLOT_VERIFY_RESULT_ERROR_IO) {
+
+        case AVB_SLOT_VERIFY_RESULT_ERROR_IO:
           ret = AVB_AB_FLOW_RESULT_ERROR_IO;
           goto out;
-        }
+
+        case AVB_SLOT_VERIFY_RESULT_OK:
+          break;
+
+        case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
+          /* Even with |allow_verification_error| this is game over. */
+          set_slot_unbootable = true;
+          break;
+
+        /* explicit fallthrough. */
+        case AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION:
+        case AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX:
+        case AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED:
+          if (allow_verification_error) {
+            /* Do nothing since we allow this. */
+            avb_debugv("Allowing slot ", slot_suffixes[n],
+                       " which verified "
+                       "with result ",
+                       avb_slot_verify_result_to_string(verify_result),
+                       " because |allow_verification_error| is true.\n", NULL);
+            saw_and_allowed_verification_error = true;
+          } else {
+            set_slot_unbootable = true;
+          }
+          break;
+      }
+
+      if (set_slot_unbootable) {
         avb_errorv("Error verifying slot ", slot_suffixes[n], " with result ",
                    avb_slot_verify_result_to_string(verify_result),
                    " - setting unbootable.\n", NULL);
@@ -305,7 +337,12 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
   avb_assert(slot_data[slot_index_to_boot] != NULL);
   data = slot_data[slot_index_to_boot];
   slot_data[slot_index_to_boot] = NULL;
-  ret = AVB_AB_FLOW_RESULT_OK;
+  if (saw_and_allowed_verification_error) {
+    avb_assert(allow_verification_error);
+    ret = AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR;
+  } else {
+    ret = AVB_AB_FLOW_RESULT_OK;
+  }
 
   /* ... and decrement tries remaining, if applicable. */
   if (!ab_data.slots[slot_index_to_boot].successful_boot &&
@@ -427,5 +464,39 @@ out:
   if (ret == AVB_IO_RESULT_OK) {
     ret = save_metadata_if_changed(ab_ops, &ab_data, &ab_data_orig);
   }
+  return ret;
+}
+
+const char* avb_ab_flow_result_to_string(AvbABFlowResult result) {
+  const char* ret = NULL;
+
+  switch (result) {
+    case AVB_AB_FLOW_RESULT_OK:
+      ret = "OK";
+      break;
+
+    case AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR:
+      ret = "OK_WITH_VERIFICATION_ERROR";
+      break;
+
+    case AVB_AB_FLOW_RESULT_ERROR_OOM:
+      ret = "ERROR_OOM";
+      break;
+
+    case AVB_AB_FLOW_RESULT_ERROR_IO:
+      ret = "ERROR_IO";
+      break;
+
+    case AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS:
+      ret = "ERROR_NO_BOOTABLE_SLOTS";
+      break;
+      /* Do not add a 'default:' case here because of -Wswitch. */
+  }
+
+  if (ret == NULL) {
+    avb_error("Unknown AvbABFlowResult value.\n");
+    ret = "(unknown)";
+  }
+
   return ret;
 }
