@@ -107,27 +107,36 @@ TEST(UtilTest, KernelCmdlineDescriptorByteswap) {
   AvbKernelCmdlineDescriptor s;
   AvbKernelCmdlineDescriptor bad;
   uint64_t nbf;
+  uint32_t n32;
 
-  // Specify 44 bytes of data past the end of the descriptor struct.
-  nbf = 44 + sizeof(AvbKernelCmdlineDescriptor) - sizeof(AvbDescriptor);
+  // Specify 40 bytes of data past the end of the descriptor struct.
+  nbf = 40 + sizeof(AvbKernelCmdlineDescriptor) - sizeof(AvbDescriptor);
   h.parent_descriptor.num_bytes_following = htobe64(nbf);
   h.parent_descriptor.tag = htobe64(AVB_DESCRIPTOR_TAG_KERNEL_CMDLINE);
-  h.kernel_cmdline_length = htobe32(44);
+  h.kernel_cmdline_length = htobe32(40);
+
+  n32 = 0x11223344;
+  h.flags = htobe32(n32);
+  n32++;
 
   EXPECT_NE(0, avb_kernel_cmdline_descriptor_validate_and_byteswap(&h, &s));
 
+  n32 = 0x11223344;
+  EXPECT_EQ(n32, s.flags);
+  n32++;
+
   EXPECT_EQ(AVB_DESCRIPTOR_TAG_KERNEL_CMDLINE, s.parent_descriptor.tag);
   EXPECT_EQ(nbf, s.parent_descriptor.num_bytes_following);
-  EXPECT_EQ(44UL, s.kernel_cmdline_length);
+  EXPECT_EQ(40UL, s.kernel_cmdline_length);
 
   // Check for bad tag.
   bad = h;
   bad.parent_descriptor.tag = htobe64(0xf00dd00d);
   EXPECT_EQ(0, avb_kernel_cmdline_descriptor_validate_and_byteswap(&bad, &s));
 
-  // Doesn't fit in 45 bytes.
+  // Doesn't fit in 41 bytes.
   bad = h;
-  bad.kernel_cmdline_length = htobe32(45);
+  bad.kernel_cmdline_length = htobe32(41);
   EXPECT_EQ(0, avb_kernel_cmdline_descriptor_validate_and_byteswap(&bad, &s));
 }
 
