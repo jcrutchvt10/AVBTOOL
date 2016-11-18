@@ -137,20 +137,27 @@ typedef struct AvbVBMetaImageHeader {
   /*  72: Length of the public key data. */
   uint64_t public_key_size;
 
-  /*  80: Offset into the "Auxiliary data" block of descriptor data. */
+  /*  80: Offset into the "Auxiliary data" block of public key metadata. */
+  uint64_t public_key_metadata_offset;
+  /*  88: Length of the public key metadata. Must be set to zero if there
+   *  is no public key metadata.
+   */
+  uint64_t public_key_metadata_size;
+
+  /*  96: Offset into the "Auxiliary data" block of descriptor data. */
   uint64_t descriptors_offset;
-  /*  88: Length of descriptor data. */
+  /* 104: Length of descriptor data. */
   uint64_t descriptors_size;
 
-  /*  96: The rollback index which can be used to prevent rollback to
+  /* 112: The rollback index which can be used to prevent rollback to
    *  older versions.
    */
   uint64_t rollback_index;
 
-  /* 104: Padding to ensure struct is size AVB_VBMETA_IMAGE_HEADER_SIZE
+  /* 120: Padding to ensure struct is size AVB_VBMETA_IMAGE_HEADER_SIZE
    * bytes. This must be set to zeroes.
    */
-  uint8_t reserved[152];
+  uint8_t reserved[136];
 } AVB_ATTR_PACKED AvbVBMetaImageHeader;
 
 /* Copies |src| to |dest|, byte-swapping fields in the process.

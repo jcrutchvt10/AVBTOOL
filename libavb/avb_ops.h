@@ -115,12 +115,22 @@ struct AvbOps {
    * embedded key material generated with 'avbtool
    * extract_public_key'.
    *
+   * The public key is in the array pointed to by |public_key_data|
+   * and is of |public_key_length| bytes.
+   *
+   * If there is no public key metadata (set with the avbtool option
+   * --public_key_metadata) then |public_key_metadata| will be set to
+   * NULL. Otherwise this field points to the data which is
+   * |public_key_metadata_length| bytes long.
+   *
    * If AVB_IO_RESULT_OK is returned then |out_is_trusted| is set -
    * true if trusted or false if untrusted.
    */
   AvbIOResult (*validate_vbmeta_public_key)(AvbOps* ops,
                                             const uint8_t* public_key_data,
                                             size_t public_key_length,
+                                            const uint8_t* public_key_metadata,
+                                            size_t public_key_metadata_length,
                                             bool* out_is_trusted);
 
   /* Gets the rollback index corresponding to the slot given by

@@ -182,8 +182,8 @@ The content for the vbmeta partition can be generated as follows:
 
  $ avbtool make_vbmeta_image                                                \
      --output OUTPUT                                                        \
-     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing.bin]      \
-     [--rollback_index NUMBER]                                              \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing]          \
+     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]    \
      [--include_descriptors_from_footer /path/to/image.bin]                 \
      [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]          \
      [--chain_partition part_name:rollback_index_slot:/path/to/key1.bin]
@@ -191,26 +191,26 @@ The content for the vbmeta partition can be generated as follows:
 An integrity footer containing the hash for an entire partition can be
 added to an existing image as follows:
 
- $ avbtool add_hash_footer                                             \
-     --image IMAGE                                                     \
-     --partition_name PARTNAME --partition_size SIZE                   \
-     [--rollback_index NUMBER]                                         \
-     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing.bin] \
-     [--hash_algorithm HASH_ALG] [--salt HEX]                          \
-     [--include_descriptors_from_footer /path/to/image.bin]            \
+ $ avbtool add_hash_footer                                               \
+     --image IMAGE                                                       \
+     --partition_name PARTNAME --partition_size SIZE                     \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing]       \
+     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER] \
+     [--hash_algorithm HASH_ALG] [--salt HEX]                            \
+     [--include_descriptors_from_footer /path/to/image.bin]              \
      [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]
 
 An integrity footer containing the root digest and salt for a hashtree
 for a partition can be added to an existing image as follows. The
 hashtree is also appended to the image.
 
-  $ avbtool add_hashtree_footer                                        \
-     --image IMAGE                                                     \
-     --partition_name PARTNAME --partition_size SIZE                   \
-     [--rollback_index NUMBER]                                         \
-     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing.bin] \
-     [--hash_algorithm HASH_ALG] [--salt HEX] [--block_size SIZE]      \
-     [--include_descriptors_from_footer /path/to/image.bin]            \
+  $ avbtool add_hashtree_footer                                          \
+     --image IMAGE                                                       \
+     --partition_name PARTNAME --partition_size SIZE                     \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing]       \
+     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER] \
+     [--hash_algorithm HASH_ALG] [--salt HEX] [--block_size SIZE]        \
+     [--include_descriptors_from_footer /path/to/image.bin]              \
      [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]
 
 The integrity footer on an image can be removed from an image. The
@@ -245,9 +245,14 @@ SHA-512:
  BOARD_AVB_ALGORITHM := SHA512_RSA4096
  BOARD_AVB_KEY_PATH := /path/to/rsa_key_4096bits.pem
 
-Remember that the public part of this key needs to be embedded in the
-bootloader of the device expected to process resulting images. Use
-'avbtool extract_public_key' to do this.
+Remember that the public part of this key needs to be available to the
+bootloader of the device expected to verify resulting images. Use
+'avbtool extract_public_key' to extract the key in the expected format
+("AVB_pk" in the following). If the device is using a different root
+of trust than AVB_pk the --public_key_metadata option can be used to
+embed a blob ("AVB_pkmd" in the following) that can be used to
+e.g. derive AVB_pk. Both AVB_pk and AVB_pkmd is passed to the
+bootloader for validation as part of verifying a slot.
 
 To prevent rollback attakcs, the rollback index should be increased on
 a regular basis. The rollback index can be set with the
