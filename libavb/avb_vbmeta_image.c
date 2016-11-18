@@ -449,6 +449,18 @@ AvbVBMetaVerifyResult avb_vbmeta_image_verify(
     goto out;
   }
 
+  /* Ensure public key metadata (if set) is entirely in the Auxiliary
+   * data block. */
+  if (h.public_key_metadata_size > 0) {
+    uint64_t pubkey_md_end;
+    if (!avb_safe_add(&pubkey_md_end, h.public_key_metadata_offset,
+                      h.public_key_metadata_size) ||
+        pubkey_md_end > h.auxiliary_data_block_size) {
+      avb_error("Public key metadata is not entirely in its block.\n");
+      goto out;
+    }
+  }
+
   /* Ensure algorithm field is supported. */
   if (h.algorithm_type >= _AVB_ALGORITHM_NUM_TYPES) {
     avb_error("Invalid or unknown algorithm.\n");
@@ -554,6 +566,10 @@ void avb_vbmeta_image_header_to_host_byte_order(const AvbVBMetaImageHeader* src,
 
   dest->public_key_offset = avb_be64toh(dest->public_key_offset);
   dest->public_key_size = avb_be64toh(dest->public_key_size);
+
+  dest->public_key_metadata_offset =
+      avb_be64toh(dest->public_key_metadata_offset);
+  dest->public_key_metadata_size = avb_be64toh(dest->public_key_metadata_size);
 
   dest->descriptors_offset = avb_be64toh(dest->descriptors_offset);
   dest->descriptors_size = avb_be64toh(dest->descriptors_size);

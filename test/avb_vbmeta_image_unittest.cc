@@ -289,6 +289,28 @@ TEST_F(VerifyTest, PublicKeyOutOfBounds) {
                                     NULL, NULL));
 }
 
+TEST_F(VerifyTest, PublicKeyMetadataOutOfBounds) {
+  GenerateVBMetaImage("vbmeta.img", "SHA256_RSA2048", 0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"));
+
+  AvbVBMetaImageHeader *h =
+      reinterpret_cast<AvbVBMetaImageHeader *>(vbmeta_image_.data());
+
+  // Check we catch when public key metadata data goes out of bounds.
+  h->public_key_metadata_offset = htobe64(4);
+  h->public_key_metadata_size = htobe64(be64toh(h->auxiliary_data_block_size));
+  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER,
+            avb_vbmeta_image_verify(vbmeta_image_.data(), vbmeta_image_.size(),
+                                    NULL, NULL));
+
+  // Overflow checks.
+  h->public_key_metadata_offset = htobe64(4);
+  h->public_key_metadata_size = htobe64(0xfffffffffffffffeUL);
+  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER,
+            avb_vbmeta_image_verify(vbmeta_image_.data(), vbmeta_image_.size(),
+                                    NULL, NULL));
+}
+
 TEST_F(VerifyTest, InvalidAlgorithmField) {
   GenerateVBMetaImage("vbmeta.img", "SHA256_RSA2048", 0,
                       base::FilePath("test/data/testkey_rsa2048.pem"));
@@ -438,6 +460,10 @@ TEST_F(VerifyTest, VBMetaHeaderByteswap) {
   n64++;
   h.public_key_size = htobe64(n64);
   n64++;
+  h.public_key_metadata_offset = htobe64(n64);
+  n64++;
+  h.public_key_metadata_size = htobe64(n64);
+  n64++;
   h.descriptors_offset = htobe64(n64);
   n64++;
   h.descriptors_size = htobe64(n64);
@@ -472,6 +498,10 @@ TEST_F(VerifyTest, VBMetaHeaderByteswap) {
   n64++;
   EXPECT_EQ(n64, s.public_key_size);
   n64++;
+  EXPECT_EQ(n64, s.public_key_metadata_offset);
+  n64++;
+  EXPECT_EQ(n64, s.public_key_metadata_size);
+  n64++;
   EXPECT_EQ(n64, s.descriptors_offset);
   n64++;
   EXPECT_EQ(n64, s.descriptors_size);
@@ -482,6 +512,6 @@ TEST_F(VerifyTest, VBMetaHeaderByteswap) {
   // If new fields are added, the following will fail. This is to
   // remind that byteswapping code (in avb_util.c) and unittests for
   // this should be updated.
-  static_assert(offsetof(AvbVBMetaImageHeader, reserved) == 104,
+  static_assert(offsetof(AvbVBMetaImageHeader, reserved) == 120,
                 "Remember to unittest byteswapping of newly added fields");
 }

@@ -1464,7 +1464,7 @@ class AvbVBMetaHeader(object):
   SIZE = 256
 
   # Keep in sync with |reserved| field of |AvbVBMetaImageHeader|.
-  RESERVED = 152
+  RESERVED = 136
 
   # Keep in sync with |AvbVBMetaImageHeader|.
   FORMAT_STRING = ('!4s2L'  # magic, 2 x version
@@ -1473,6 +1473,7 @@ class AvbVBMetaHeader(object):
                    '2Q'  # offset, size (hash)
                    '2Q'  # offset, size (signature)
                    '2Q'  # offset, size (public key)
+                   '2Q'  # offset, size (public key metadata)
                    '2Q'  # offset, size (descriptors)
                    'Q' +  # rollback_index
                    str(RESERVED) + 'x')  # padding for reserved bytes
@@ -1493,7 +1494,9 @@ class AvbVBMetaHeader(object):
        self.authentication_data_block_size, self.auxiliary_data_block_size,
        self.algorithm_type, self.hash_offset, self.hash_size,
        self.signature_offset, self.signature_size, self.public_key_offset,
-       self.public_key_size, self.descriptors_offset, self.descriptors_size,
+       self.public_key_size, self.public_key_metadata_offset,
+       self.public_key_metadata_size, self.descriptors_offset,
+       self.descriptors_size,
        self.rollback_index) = struct.unpack(self.FORMAT_STRING, data)
       # Nuke NUL-bytes at the end of the string.
       if self.magic != 'AVB0':
@@ -1511,6 +1514,8 @@ class AvbVBMetaHeader(object):
       self.signature_size = 0
       self.public_key_offset = 0
       self.public_key_size = 0
+      self.public_key_metadata_offset = 0
+      self.public_key_metadata_size = 0
       self.descriptors_offset = 0
       self.descriptors_size = 0
       self.rollback_index = 0
@@ -1526,8 +1531,9 @@ class AvbVBMetaHeader(object):
         self.header_version_minor, self.authentication_data_block_size,
         self.auxiliary_data_block_size, self.algorithm_type, self.hash_offset,
         self.hash_size, self.signature_offset, self.signature_size,
-        self.public_key_offset, self.public_key_size, self.descriptors_offset,
-        self.descriptors_size, self.rollback_index))
+        self.public_key_offset, self.public_key_size,
+        self.public_key_metadata_offset, self.public_key_metadata_size,
+        self.descriptors_offset, self.descriptors_size, self.rollback_index))
 
   def encode(self):
     """Serializes the header (256) to a bytearray().
@@ -1541,7 +1547,8 @@ class AvbVBMetaHeader(object):
                        self.auxiliary_data_block_size, self.algorithm_type,
                        self.hash_offset, self.hash_size, self.signature_offset,
                        self.signature_size, self.public_key_offset,
-                       self.public_key_size, self.descriptors_offset,
+                       self.public_key_size, self.public_key_metadata_offset,
+                       self.public_key_metadata_size, self.descriptors_offset,
                        self.descriptors_size, self.rollback_index)
 
 
@@ -1777,8 +1784,8 @@ class Avb(object):
     return desc
 
   def make_vbmeta_image(self, output, chain_partitions, algorithm_name,
-                        key_path, rollback_index, props, props_from_file,
-                        kernel_cmdlines,
+                        key_path, public_key_metadata_path, rollback_index,
+                        props, props_from_file, kernel_cmdlines,
                         generate_dm_verity_cmdline_from_hashtree,
                         include_descriptors_from_image):
     """Implements the 'make_vbmeta_image' command.
@@ -1788,6 +1795,7 @@ class Avb(object):
       chain_partitions: List of partitions to chain.
       algorithm_name: Name of algorithm to use.
       key_path: Path to key to use or None.
+      public_key_metadata_path: Path to public key metadata or None.
       rollback_index: The rollback index to use.
       props: Properties to insert (list of strings of the form 'key:value').
       props_from_file: Properties to insert (list of strings 'key:<path>').
@@ -1817,8 +1825,8 @@ class Avb(object):
         descriptors.append(desc)
 
     vbmeta_blob = self._generate_vbmeta_blob(
-        algorithm_name, key_path, descriptors, rollback_index, props,
-        props_from_file, kernel_cmdlines,
+        algorithm_name, key_path, public_key_metadata_path, descriptors,
+        rollback_index, props, props_from_file, kernel_cmdlines,
         generate_dm_verity_cmdline_from_hashtree,
         include_descriptors_from_image)
 
@@ -1826,7 +1834,8 @@ class Avb(object):
     output.seek(0)
     output.write(vbmeta_blob)
 
-  def _generate_vbmeta_blob(self, algorithm_name, key_path, descriptors,
+  def _generate_vbmeta_blob(self, algorithm_name, key_path,
+                            public_key_metadata_path, descriptors,
                             rollback_index, props, props_from_file,
                             kernel_cmdlines,
                             generate_dm_verity_cmdline_from_hashtree,
@@ -1844,6 +1853,7 @@ class Avb(object):
     Arguments:
       algorithm_name: The algorithm name as per the ALGORITHMS dict.
       key_path: The path to the .pem file used to sign the blob.
+      public_key_metadata_path: Path to public key metadata or None.
       descriptors: A list of descriptors to insert or None.
       rollback_index: The rollback index to use.
       props: Properties to insert (List of strings of the form 'key:value').
@@ -1918,6 +1928,12 @@ class Avb(object):
         for desc in image_descriptors:
           encoded_descriptors.extend(desc.encode())
 
+    # Load public key metadata blob, if requested.
+    pkmd_blob = []
+    if public_key_metadata_path:
+      with open(public_key_metadata_path) as f:
+        pkmd_blob = f.read()
+
     key = None
     encoded_key = bytearray()
     if alg.public_key_num_bytes > 0:
@@ -1932,14 +1948,16 @@ class Avb(object):
 
     h = AvbVBMetaHeader()
 
-    # For the Auxiliary data block, descriptors are stored at offset 0
-    # and the public key is immediately after that.
+    # For the Auxiliary data block, descriptors are stored at offset 0,
+    # followed by the public key, followed by the public key metadata blob.
     h.auxiliary_data_block_size = round_to_multiple(
-        len(encoded_descriptors) + len(encoded_key), 64)
+        len(encoded_descriptors) + len(encoded_key) + len(pkmd_blob), 64)
     h.descriptors_offset = 0
     h.descriptors_size = len(encoded_descriptors)
     h.public_key_offset = h.descriptors_size
     h.public_key_size = len(encoded_key)
+    h.public_key_metadata_offset = h.public_key_offset + h.public_key_size
+    h.public_key_metadata_size = len(pkmd_blob)
 
     # For the Authentication data block, the hash is first and then
     # the signature.
@@ -1962,6 +1980,7 @@ class Avb(object):
     aux_data_blob = bytearray()
     aux_data_blob.extend(encoded_descriptors)
     aux_data_blob.extend(encoded_key)
+    aux_data_blob.extend(pkmd_blob)
     padding_bytes = h.auxiliary_data_block_size - len(aux_data_blob)
     aux_data_blob.extend('\0' * padding_bytes)
 
@@ -2013,7 +2032,8 @@ class Avb(object):
 
   def add_hash_footer(self, image_filename, partition_size, partition_name,
                       hash_algorithm, salt, algorithm_name, key_path,
-                      rollback_index, props, props_from_file, kernel_cmdlines,
+                      public_key_metadata_path, rollback_index, props,
+                      props_from_file, kernel_cmdlines,
                       generate_dm_verity_cmdline_from_hashtree,
                       include_descriptors_from_image):
     """Implementation of the add_hash_footer on unsparse images.
@@ -2026,6 +2046,7 @@ class Avb(object):
       salt: Salt to use as a hexadecimal string or None to use /dev/urandom.
       algorithm_name: Name of algorithm to use.
       key_path: Path to key to use or None.
+      public_key_metadata_path: Path to public key metadata or None.
       rollback_index: Rollback index.
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
@@ -2102,8 +2123,8 @@ class Avb(object):
 
       # Generate the VBMeta footer.
       vbmeta_blob = self._generate_vbmeta_blob(
-          algorithm_name, key_path, [h_desc], rollback_index, props,
-          props_from_file, kernel_cmdlines,
+          algorithm_name, key_path, public_key_metadata_path, [h_desc],
+          rollback_index, props, props_from_file, kernel_cmdlines,
           generate_dm_verity_cmdline_from_hashtree,
           include_descriptors_from_image)
 
@@ -2150,8 +2171,8 @@ class Avb(object):
   def add_hashtree_footer(self, image_filename, partition_size, partition_name,
                           generate_fec, fec_num_roots, hash_algorithm,
                           block_size, salt, algorithm_name, key_path,
-                          rollback_index, props, props_from_file,
-                          kernel_cmdlines,
+                          public_key_metadata_path, rollback_index, props,
+                          props_from_file, kernel_cmdlines,
                           generate_dm_verity_cmdline_from_hashtree,
                           include_descriptors_from_image,
                           calc_max_image_size):
@@ -2171,6 +2192,7 @@ class Avb(object):
       salt: Salt to use as a hexadecimal string or None to use /dev/urandom.
       algorithm_name: Name of algorithm to use.
       key_path: Path to key to use or None.
+      public_key_metadata_path: Path to public key metadata or None.
       rollback_index: Rollback index.
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
@@ -2312,8 +2334,8 @@ class Avb(object):
       # Generate the VBMeta footer and add padding as needed.
       vbmeta_offset = tree_offset + len_hashtree_and_fec
       vbmeta_blob = self._generate_vbmeta_blob(
-          algorithm_name, key_path, [ht_desc], rollback_index, props,
-          props_from_file, kernel_cmdlines,
+          algorithm_name, key_path, public_key_metadata_path, [ht_desc],
+          rollback_index, props, props_from_file, kernel_cmdlines,
           generate_dm_verity_cmdline_from_hashtree,
           include_descriptors_from_image)
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
@@ -2522,6 +2544,10 @@ class AvbTool(object):
                             help='Path to RSA private key file',
                             metavar='KEY',
                             required=False)
+    sub_parser.add_argument('--public_key_metadata',
+                            help='Path to public key metadata file',
+                            metavar='KEY_METADATA',
+                            required=False)
     sub_parser.add_argument('--rollback_index',
                             help='Rollback Index',
                             type=parse_number,
@@ -2701,7 +2727,8 @@ class AvbTool(object):
   def make_vbmeta_image(self, args):
     """Implements the 'make_vbmeta_image' sub-command."""
     self.avb.make_vbmeta_image(args.output, args.chain_partition,
-                               args.algorithm, args.key, args.rollback_index,
+                               args.algorithm, args.key,
+                               args.public_key_metadata, args.rollback_index,
                                args.prop, args.prop_from_file,
                                args.kernel_cmdline,
                                args.generate_dm_verity_cmdline_from_hashtree,
@@ -2712,8 +2739,9 @@ class AvbTool(object):
     self.avb.add_hash_footer(args.image.name, args.partition_size,
                              args.partition_name, args.hash_algorithm,
                              args.salt, args.algorithm, args.key,
-                             args.rollback_index, args.prop,
-                             args.prop_from_file, args.kernel_cmdline,
+                             args.public_key_metadata, args.rollback_index,
+                             args.prop, args.prop_from_file,
+                             args.kernel_cmdline,
                              args.generate_dm_verity_cmdline_from_hashtree,
                              args.include_descriptors_from_image)
 
@@ -2725,6 +2753,7 @@ class AvbTool(object):
                                  args.generate_fec, args.fec_num_roots,
                                  args.hash_algorithm, args.block_size,
                                  args.salt, args.algorithm, args.key,
+                                 args.public_key_metadata,
                                  args.rollback_index, args.prop,
                                  args.prop_from_file,
                                  args.kernel_cmdline,
