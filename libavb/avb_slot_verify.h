@@ -157,7 +157,26 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
  * If |out_data| is not NULL, it will be set to a newly allocated
  * |AvbSlotVerifyData| struct containing all the data needed to
  * actually boot the slot. This data structure should be freed with
- * avb_slot_verify_data_free() when you are done with it.
+ * avb_slot_verify_data_free() when you are done with it. See below
+ * for when this is returned.
+ *
+ * If |allow_verification_error| is false this function will bail out
+ * as soon as an error is encountered and |out_data| is set only if
+ * AVB_SLOT_VERIFY_RESULT_OK is returned.
+ *
+ * Otherwise if |allow_verification_error| is true the function will
+ * continue verification efforts and |out_data| is also set if
+ * AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED,
+ * AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION, or
+ * AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX is returned. It is
+ * undefined which error is returned if more than one distinct error
+ * is encountered. It is guaranteed that AVB_SLOT_VERIFY_RESULT_OK is
+ * returned if, and only if, there are no errors. This mode is needed
+ * to boot valid but unverified slots when the device is unlocked.
+ *
+ * Also note that |out_data| is never set if
+ * AVB_SLOT_VERIFY_RESULT_ERROR_OOM, AVB_SLOT_VERIFY_RESULT_ERROR_IO,
+ * or AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA is returned.
  *
  * AVB_SLOT_VERIFY_RESULT_OK is returned if everything is verified
  * correctly and all public keys are accepted.
@@ -186,6 +205,7 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
 AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                     const char* const* requested_partitions,
                                     const char* ab_suffix,
+                                    bool allow_verification_error,
                                     AvbSlotVerifyData** out_data);
 
 #ifdef __cplusplus

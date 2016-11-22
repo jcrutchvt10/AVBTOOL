@@ -42,9 +42,29 @@
 /* Maximum size of a vbmeta image - 64 KiB. */
 #define VBMETA_MAX_SIZE (64 * 1024)
 
+/* Helper function to see if we should continue with verification in
+ * allow_verification_error=true mode if something goes wrong. See the
+ * comments for the avb_slot_verify() function for more information.
+ */
+static inline bool result_should_continue(AvbSlotVerifyResult result) {
+  switch (result) {
+    case AVB_SLOT_VERIFY_RESULT_ERROR_OOM:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_IO:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
+      return false;
+
+    case AVB_SLOT_VERIFY_RESULT_OK:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED:
+      return true;
+  }
+}
+
 static AvbSlotVerifyResult load_and_verify_hash_partition(
     AvbOps* ops, const char* const* requested_partitions, const char* ab_suffix,
-    const AvbDescriptor* descriptor, AvbSlotVerifyData* slot_data) {
+    bool allow_verification_error, const AvbDescriptor* descriptor,
+    AvbSlotVerifyData* slot_data) {
   AvbHashDescriptor hash_desc;
   const uint8_t* desc_partition_name;
   const uint8_t* desc_salt;
@@ -142,26 +162,30 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
 
   ret = AVB_SLOT_VERIFY_RESULT_OK;
 
-  /* If this is the requested partition, copy to slot_data. */
-  found =
-      avb_strv_find_str(requested_partitions, (const char*)desc_partition_name,
-                        hash_desc.partition_name_len);
-  if (found != NULL) {
-    AvbPartitionData* loaded_partition;
-    if (slot_data->num_loaded_partitions == MAX_NUMBER_OF_LOADED_PARTITIONS) {
-      avb_errorv(part_name, ": Too many loaded partitions.\n", NULL);
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-      goto out;
+out:
+
+  if (ret == AVB_SLOT_VERIFY_RESULT_OK || result_should_continue(ret)) {
+    /* If this is the requested partition, copy to slot_data. */
+    found = avb_strv_find_str(requested_partitions,
+                              (const char*)desc_partition_name,
+                              hash_desc.partition_name_len);
+    if (found != NULL) {
+      AvbPartitionData* loaded_partition;
+      if (slot_data->num_loaded_partitions == MAX_NUMBER_OF_LOADED_PARTITIONS) {
+        avb_errorv(part_name, ": Too many loaded partitions.\n", NULL);
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+        goto fail;
+      }
+      loaded_partition =
+          &slot_data->loaded_partitions[slot_data->num_loaded_partitions++];
+      loaded_partition->partition_name = avb_strdup(found);
+      loaded_partition->data_size = hash_desc.image_size;
+      loaded_partition->data = image_buf;
+      image_buf = NULL;
     }
-    loaded_partition =
-        &slot_data->loaded_partitions[slot_data->num_loaded_partitions++];
-    loaded_partition->partition_name = avb_strdup(found);
-    loaded_partition->data_size = hash_desc.image_size;
-    loaded_partition->data = image_buf;
-    image_buf = NULL;
   }
 
-out:
+fail:
   if (image_buf != NULL) {
     avb_free(image_buf);
   }
@@ -170,10 +194,10 @@ out:
 
 static AvbSlotVerifyResult load_and_verify_vbmeta(
     AvbOps* ops, const char* const* requested_partitions, const char* ab_suffix,
-    int rollback_index_slot, const char* partition_name,
-    size_t partition_name_len, const uint8_t* expected_public_key,
-    size_t expected_public_key_length, AvbSlotVerifyData* slot_data,
-    AvbAlgorithmType* out_algorithm_type) {
+    bool allow_verification_error, int rollback_index_slot,
+    const char* partition_name, size_t partition_name_len,
+    const uint8_t* expected_public_key, size_t expected_public_key_length,
+    AvbSlotVerifyData* slot_data, AvbAlgorithmType* out_algorithm_type) {
   char full_partition_name[PART_NAME_MAX_SIZE];
   AvbSlotVerifyResult ret;
   AvbIOResult io_ret;
@@ -190,6 +214,8 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
   size_t num_descriptors;
   size_t n;
   int is_main_vbmeta;
+
+  ret = AVB_SLOT_VERIFY_RESULT_OK;
 
   avb_assert(slot_data != NULL);
 
@@ -280,10 +306,29 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
    */
   vbmeta_ret =
       avb_vbmeta_image_verify(vbmeta_buf, vbmeta_num_read, &pk_data, &pk_len);
-  if (vbmeta_ret != AVB_VBMETA_VERIFY_RESULT_OK) {
-    avb_errorv(full_partition_name, ": Error verifying vbmeta image.\n", NULL);
-    ret = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
-    goto out;
+  switch (vbmeta_ret) {
+    case AVB_VBMETA_VERIFY_RESULT_OK:
+      avb_assert(pk_data != NULL && pk_len > 0);
+      break;
+
+    case AVB_VBMETA_VERIFY_RESULT_OK_NOT_SIGNED:
+    case AVB_VBMETA_VERIFY_RESULT_HASH_MISMATCH:
+    case AVB_VBMETA_VERIFY_RESULT_SIGNATURE_MISMATCH:
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
+      avb_errorv(full_partition_name, ": Error verifying vbmeta image: ",
+                 avb_vbmeta_verify_result_to_string(vbmeta_ret), "\n", NULL);
+      if (!allow_verification_error) {
+        goto out;
+      }
+      break;
+
+    case AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER:
+      /* No way to continue this case. */
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
+      avb_errorv(full_partition_name,
+                 ": Error verifying vbmeta image: invalid vbmeta header\n",
+                 NULL);
+      goto out;
   }
 
   /* Byteswap the header. */
@@ -291,47 +336,53 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
                                              &vbmeta_header);
 
   /* Check if key used to make signature matches what is expected. */
-  if (expected_public_key != NULL) {
-    avb_assert(!is_main_vbmeta);
-    if (expected_public_key_length != pk_len ||
-        avb_safe_memcmp(expected_public_key, pk_data, pk_len) != 0) {
-      avb_errorv(full_partition_name,
-                 ": Public key used to sign data does not match key in chain "
-                 "partition descriptor.\n",
-                 NULL);
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED;
-      goto out;
-    }
-  } else {
-    bool key_is_trusted = false;
-    const uint8_t* pk_metadata = NULL;
-    size_t pk_metadata_len = 0;
+  if (pk_data != NULL) {
+    if (expected_public_key != NULL) {
+      avb_assert(!is_main_vbmeta);
+      if (expected_public_key_length != pk_len ||
+          avb_safe_memcmp(expected_public_key, pk_data, pk_len) != 0) {
+        avb_errorv(full_partition_name,
+                   ": Public key used to sign data does not match key in chain "
+                   "partition descriptor.\n",
+                   NULL);
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED;
+        if (!allow_verification_error) {
+          goto out;
+        }
+      }
+    } else {
+      bool key_is_trusted = false;
+      const uint8_t* pk_metadata = NULL;
+      size_t pk_metadata_len = 0;
 
-    if (vbmeta_header.public_key_metadata_size > 0) {
-      pk_metadata = vbmeta_buf + sizeof(AvbVBMetaImageHeader) +
-                    vbmeta_header.authentication_data_block_size +
-                    vbmeta_header.public_key_metadata_offset;
-      pk_metadata_len = vbmeta_header.public_key_metadata_size;
-    }
+      if (vbmeta_header.public_key_metadata_size > 0) {
+        pk_metadata = vbmeta_buf + sizeof(AvbVBMetaImageHeader) +
+                      vbmeta_header.authentication_data_block_size +
+                      vbmeta_header.public_key_metadata_offset;
+        pk_metadata_len = vbmeta_header.public_key_metadata_size;
+      }
 
-    avb_assert(is_main_vbmeta);
-    io_ret = ops->validate_vbmeta_public_key(ops, pk_data, pk_len, pk_metadata,
-                                             pk_metadata_len, &key_is_trusted);
-    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-      goto out;
-    } else if (io_ret != AVB_IO_RESULT_OK) {
-      avb_errorv(full_partition_name,
-                 ": Error while checking public key used to sign data.\n",
-                 NULL);
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
-      goto out;
-    }
-    if (!key_is_trusted) {
-      avb_errorv(full_partition_name,
-                 ": Public key used to sign data rejected.\n", NULL);
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED;
-      goto out;
+      avb_assert(is_main_vbmeta);
+      io_ret = ops->validate_vbmeta_public_key(
+          ops, pk_data, pk_len, pk_metadata, pk_metadata_len, &key_is_trusted);
+      if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+        goto out;
+      } else if (io_ret != AVB_IO_RESULT_OK) {
+        avb_errorv(full_partition_name,
+                   ": Error while checking public key used to sign data.\n",
+                   NULL);
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+        goto out;
+      }
+      if (!key_is_trusted) {
+        avb_errorv(full_partition_name,
+                   ": Public key used to sign data rejected.\n", NULL);
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED;
+        if (!allow_verification_error) {
+          goto out;
+        }
+      }
     }
   }
 
@@ -353,7 +404,9 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
         ": Image rollback index is less than the stored rollback index.\n",
         NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX;
-    goto out;
+    if (!allow_verification_error) {
+      goto out;
+    }
   }
 
   /* Now go through all descriptors and take the appropriate action:
@@ -383,10 +436,13 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
       case AVB_DESCRIPTOR_TAG_HASH: {
         AvbSlotVerifyResult sub_ret;
         sub_ret = load_and_verify_hash_partition(
-            ops, requested_partitions, ab_suffix, descriptors[n], slot_data);
+            ops, requested_partitions, ab_suffix, allow_verification_error,
+            descriptors[n], slot_data);
         if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
           ret = sub_ret;
-          goto out;
+          if (!allow_verification_error || !result_should_continue(ret)) {
+            goto out;
+          }
         }
       } break;
 
@@ -418,14 +474,16 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
         chain_public_key = chain_partition_name + chain_desc.partition_name_len;
 
         sub_ret = load_and_verify_vbmeta(
-            ops, requested_partitions, ab_suffix,
+            ops, requested_partitions, ab_suffix, allow_verification_error,
             chain_desc.rollback_index_slot, (const char*)chain_partition_name,
             chain_desc.partition_name_len, chain_public_key,
             chain_desc.public_key_len, slot_data,
             NULL /* out_algorithm_type */);
         if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
           ret = sub_ret;
-          goto out;
+          if (!result_should_continue(ret)) {
+            goto out;
+          }
         }
       } break;
 
@@ -488,8 +546,6 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
         break;
     }
   }
-
-  ret = AVB_SLOT_VERIFY_RESULT_OK;
 
   /* So far, so good. Copy needed data to user, if requested. */
   if (is_main_vbmeta) {
@@ -669,6 +725,7 @@ static int cmdline_append_hex(AvbSlotVerifyData* slot_data, const char* key,
 AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                     const char* const* requested_partitions,
                                     const char* ab_suffix,
+                                    bool allow_verification_error,
                                     AvbSlotVerifyData** out_data) {
   AvbSlotVerifyResult ret;
   AvbSlotVerifyData* slot_data = NULL;
@@ -692,12 +749,16 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
   }
 
   ret = load_and_verify_vbmeta(
-      ops, requested_partitions, ab_suffix, 0 /* rollback_index_slot */,
-      "vbmeta", avb_strlen("vbmeta"), NULL /* expected_public_key */,
-      0 /* expected_public_key_length */, slot_data, &algorithm_type);
+      ops, requested_partitions, ab_suffix, allow_verification_error,
+      0 /* rollback_index_slot */, "vbmeta", avb_strlen("vbmeta"),
+      NULL /* expected_public_key */, 0 /* expected_public_key_length */,
+      slot_data, &algorithm_type);
+  if (!allow_verification_error && ret != AVB_SLOT_VERIFY_RESULT_OK) {
+    goto fail;
+  }
 
   /* If things check out, mangle the kernel command-line as needed. */
-  if (ret == AVB_SLOT_VERIFY_RESULT_OK) {
+  if (result_should_continue(ret)) {
     /* Fill in |ab_suffix| field. */
     slot_data->ab_suffix = avb_strdup(ab_suffix);
     if (slot_data->ab_suffix == NULL) {
@@ -793,6 +854,10 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
     } else {
       avb_slot_verify_data_free(slot_data);
     }
+  }
+
+  if (!allow_verification_error) {
+    avb_assert(ret == AVB_SLOT_VERIFY_RESULT_OK);
   }
 
   return ret;
