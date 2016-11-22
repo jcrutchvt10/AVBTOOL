@@ -197,6 +197,9 @@ typedef enum {
   AVB_VBMETA_VERIFY_RESULT_SIGNATURE_MISMATCH,
 } AvbVBMetaVerifyResult;
 
+/* Get a textual representation of |result|. */
+const char* avb_vbmeta_verify_result_to_string(AvbVBMetaVerifyResult result);
+
 /* Checks that vbmeta image at |data| of size |length| is a valid
  * vbmeta image. The complete contents of the vbmeta image must be
  * passed in. It's fine if |length| is bigger than the actual image,
@@ -212,7 +215,8 @@ typedef enum {
  * |out_public_key_data| is non-NULL, it will be set to point inside
  * |data| for where the serialized public key data is stored and
  * |out_public_key_length|, if non-NULL, will be set to the length of
- * the public key data.
+ * the public key data. If there is no public key in the metadata then
+ * |out_public_key_data| is set to NULL.
  *
  * See the |AvbVBMetaVerifyResult| enum for possible return values.
  *
