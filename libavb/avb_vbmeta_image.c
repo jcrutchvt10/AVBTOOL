@@ -376,8 +376,12 @@ AvbVBMetaVerifyResult avb_vbmeta_image_verify(
 
   ret = AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER;
 
-  if (out_public_key_data != NULL) *out_public_key_data = NULL;
-  if (out_public_key_length != NULL) *out_public_key_length = 0;
+  if (out_public_key_data != NULL) {
+    *out_public_key_data = NULL;
+  }
+  if (out_public_key_length != NULL) {
+    *out_public_key_length = 0;
+  }
 
   /* Ensure magic is correct. */
   if (avb_safe_memcmp(data, AVB_MAGIC, AVB_MAGIC_LEN) != 0) {
@@ -534,9 +538,14 @@ AvbVBMetaVerifyResult avb_vbmeta_image_verify(
     goto out;
   }
 
-  if (out_public_key_data != NULL)
-    *out_public_key_data = auxiliary_block + h.public_key_offset;
-  if (out_public_key_length != NULL) *out_public_key_length = h.public_key_size;
+  if (h.public_key_size > 0) {
+    if (out_public_key_data != NULL) {
+      *out_public_key_data = auxiliary_block + h.public_key_offset;
+    }
+    if (out_public_key_length != NULL) {
+      *out_public_key_length = h.public_key_size;
+    }
+  }
 
   ret = AVB_VBMETA_VERIFY_RESULT_OK;
 
@@ -575,4 +584,34 @@ void avb_vbmeta_image_header_to_host_byte_order(const AvbVBMetaImageHeader* src,
   dest->descriptors_size = avb_be64toh(dest->descriptors_size);
 
   dest->rollback_index = avb_be64toh(dest->rollback_index);
+}
+
+const char* avb_vbmeta_verify_result_to_string(AvbVBMetaVerifyResult result) {
+  const char* ret = NULL;
+
+  switch (result) {
+    case AVB_VBMETA_VERIFY_RESULT_OK:
+      ret = "OK";
+      break;
+    case AVB_VBMETA_VERIFY_RESULT_OK_NOT_SIGNED:
+      ret = "OK_NOT_SIGNED";
+      break;
+    case AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER:
+      ret = "INVALID_VBMETA_HEADER";
+      break;
+    case AVB_VBMETA_VERIFY_RESULT_HASH_MISMATCH:
+      ret = "HASH_MISMATCH";
+      break;
+    case AVB_VBMETA_VERIFY_RESULT_SIGNATURE_MISMATCH:
+      ret = "SIGNATURE_MISMATCH";
+      break;
+      /* Do not add a 'default:' case here because of -Wswitch. */
+  }
+
+  if (ret == NULL) {
+    avb_error("Unknown AvbVBMetaVerifyResult value.\n");
+    ret = "(unknown)";
+  }
+
+  return ret;
 }
