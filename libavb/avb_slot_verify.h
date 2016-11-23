@@ -60,8 +60,8 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result);
 
 /* AvbPartitionData contains data loaded from partitions when using
  * avb_slot_verify(). The |partition_name| field contains the name of
- * the partition, |data| points to the loaded data which is
- * |data_size| bytes long.
+ * the partition (without A/B suffix), |data| points to the loaded
+ * data which is |data_size| bytes long.
  *
  * Note that this is strictly less than the partition size - it's only
  * the image stored there, not the entire partition nor any of the
@@ -72,6 +72,26 @@ typedef struct {
   uint8_t* data;
   size_t data_size;
 } AvbPartitionData;
+
+/* AvbVBMetaData contains a vbmeta struct loaded from a partition when
+ * using avb_slot_verify(). The |partition_name| field contains the
+ * name of the partition (without A/B suffix), |vbmeta_data| points to
+ * the loaded data which is |vbmeta_size| bytes long.
+ *
+ * The |verify_result| field contains the result of
+ * avb_vbmeta_image_verify() on the data. This is guaranteed to be
+ * AVB_VBMETA_VERIFY_RESULT_OK for all vbmeta images if
+ * avb_slot_verify() returns AVB_SLOT_VERIFY_RESULT_OK.
+ *
+ * You can use avb_descriptor_get_all(), avb_descriptor_foreach(), and
+ * avb_vbmeta_image_header_to_host_byte_order() with this data.
+ */
+typedef struct {
+  char* partition_name;
+  uint8_t* vbmeta_data;
+  size_t vbmeta_size;
+  AvbVBMetaVerifyResult verify_result;
+} AvbVBMetaData;
 
 /* AvbSlotVerifyData contains data needed to boot a particular slot
  * and is returned by avb_slot_verify() if partitions in a slot are
@@ -84,16 +104,17 @@ typedef struct {
  * The |ab_suffix| field is the copy of the of |ab_suffix| field
  * passed to avb_slot_verify(). It is the A/B suffix of the slot.
  *
+ * The VBMeta images that were checked are available in the
+ * |vbmeta_images| field. The field |num_vbmeta_images| contains the
+ * number of elements in this array. The first element -
+ * vbmeta_images[0] - is guaranteed to be from the "vbmeta" partition
+ * in the requested slot.
+ *
  * The partitions loaded and verified from from the slot are
  * accessible in the |loaded_partitions| array. The field
  * |num_loaded_partitions| contains the number of elements in this
  * array. The order of partitions in this array may not necessarily be
  * the same order as in the passed-in |requested_partitions| array.
- *
- * The verified vbmeta image in the 'vbmeta' partition of the slot is
- * accessible from the |vbmeta_data| field and is of length
- * |vbmeta_size| bytes. You can use this data with
- * e.g. avb_descriptor_get_all().
  *
  * Rollback indexes for the verified slot are stored in the
  * |rollback_indexes| field. Note that avb_slot_verify() will NEVER
@@ -112,7 +133,7 @@ typedef struct {
  * Additionally, the |cmdline| field will have the following kernel
  * command-line options set:
  *
- *   androidboot.avb.device_state: set to "locked" or "unlocked"
+ *   androidboot.vbmeta.device_state: set to "locked" or "unlocked"
  *   depending on the result of the result of AvbOps's
  *   read_is_unlocked() function.
  *
@@ -121,15 +142,15 @@ typedef struct {
  *   value.
  *
  *   androidboot.vbmeta.{hash_alg, size, digest}: Will be set to
- *   the digest of the vbmeta image.
+ *   the digest of all images in |vbmeta_images|.
  *
  * This struct may grow in the future without it being considered an
  * ABI break.
  */
 typedef struct {
   char* ab_suffix;
-  uint8_t* vbmeta_data;
-  size_t vbmeta_size;
+  AvbVBMetaData* vbmeta_images;
+  size_t num_vbmeta_images;
   AvbPartitionData* loaded_partitions;
   size_t num_loaded_partitions;
   char* cmdline;
