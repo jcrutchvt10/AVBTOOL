@@ -182,10 +182,11 @@ TEST_F(AvbSlotVerifyTest, CorruptedImage) {
   // data is at the end and this data is signed, this will change the
   // value of the computed hash.
   uint8_t corrupt_data[4] = {0xff, 0xff, 0xff, 0xff};
-  EXPECT_EQ(AVB_IO_RESULT_OK, ops_.avb_ops()->write_to_partition(
-                                  ops_.avb_ops(), "vbmeta_a",
-                                  -sizeof corrupt_data,  // offset from end
-                                  sizeof corrupt_data, corrupt_data));
+  EXPECT_EQ(AVB_IO_RESULT_OK,
+            ops_.avb_ops()->write_to_partition(
+                ops_.avb_ops(), "vbmeta_a",
+                -sizeof corrupt_data,  // offset from end
+                sizeof corrupt_data, corrupt_data));
 
   AvbSlotVerifyData* slot_data = NULL;
   const char* requested_partitions[] = {"boot", NULL};
@@ -210,10 +211,11 @@ TEST_F(AvbSlotVerifyTest, CorruptedMetadata) {
   // even if the device is unlocked. Specifically no AvbSlotVerifyData
   // is returned.
   uint8_t corrupt_data[4] = {0xff, 0xff, 0xff, 0xff};
-  EXPECT_EQ(AVB_IO_RESULT_OK, ops_.avb_ops()->write_to_partition(
-                                  ops_.avb_ops(), "vbmeta_a",
-                                  0,  // offset: beginning
-                                  sizeof corrupt_data, corrupt_data));
+  EXPECT_EQ(
+      AVB_IO_RESULT_OK,
+      ops_.avb_ops()->write_to_partition(ops_.avb_ops(), "vbmeta_a",
+                                         0,  // offset: beginning
+                                         sizeof corrupt_data, corrupt_data));
 
   AvbSlotVerifyData* slot_data = NULL;
   const char* requested_partitions[] = {"boot", NULL};
@@ -357,7 +359,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
       "aca82b8c227721a389e89643c7e8ced39b3c587337bc9c10539c09a50026121f",
       std::string(slot_data->cmdline));
   EXPECT_EQ(4UL, slot_data->rollback_indexes[0]);
-  for (size_t n = 1; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS; n++) {
+  for (size_t n = 1; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
     EXPECT_EQ(0UL, slot_data->rollback_indexes[n]);
   }
   avb_slot_verify_data_free(slot_data);
@@ -400,10 +402,11 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMetaCorruptBoot) {
 
   // Now corrupt boot_a.img and expect verification error.
   uint8_t corrupt_data[4] = {0xff, 0xff, 0xff, 0xff};
-  EXPECT_EQ(AVB_IO_RESULT_OK, ops_.avb_ops()->write_to_partition(
-                                  ops_.avb_ops(), "boot_a",
-                                  1024 * 1024,  // offset: 1 MiB
-                                  sizeof corrupt_data, corrupt_data));
+  EXPECT_EQ(
+      AVB_IO_RESULT_OK,
+      ops_.avb_ops()->write_to_partition(ops_.avb_ops(), "boot_a",
+                                         1024 * 1024,  // offset: 1 MiB
+                                         sizeof corrupt_data, corrupt_data));
 
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION,
             avb_slot_verify(ops_.avb_ops(), requested_partitions, "_a",
@@ -458,9 +461,10 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       "Flags:                    0\n"
       "Descriptors:\n"
       "    Chain Partition descriptor:\n"
-      "      Partition Name:        boot\n"
-      "      Rollback Index Slot:   1\n"
-      "      Public key (sha1):     2597c218aae470a130f61162feaae70afd97f011\n"
+      "      Partition Name:          boot\n"
+      "      Rollback Index Location: 1\n"
+      "      Public key (sha1):       "
+      "2597c218aae470a130f61162feaae70afd97f011\n"
       "    Kernel Cmdline descriptor:\n"
       "      Flags:                 0\n"
       "      Kernel Cmdline:        'cmdline2 in vbmeta'\n",
@@ -563,7 +567,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
-  for (size_t n = 2; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS; n++) {
+  for (size_t n = 2; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
     EXPECT_EQ(0UL, slot_data->rollback_indexes[n]);
   }
   avb_slot_verify_data_free(slot_data);
@@ -609,10 +613,11 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionCorruptBoot) {
 
   // Now corrupt boot_a.img and expect verification error.
   uint8_t corrupt_data[4] = {0xff, 0xff, 0xff, 0xff};
-  EXPECT_EQ(AVB_IO_RESULT_OK, ops_.avb_ops()->write_to_partition(
-                                  ops_.avb_ops(), "boot_a",
-                                  1024 * 1024,  // offset: 1 MiB
-                                  sizeof corrupt_data, corrupt_data));
+  EXPECT_EQ(
+      AVB_IO_RESULT_OK,
+      ops_.avb_ops()->write_to_partition(ops_.avb_ops(), "boot_a",
+                                         1024 * 1024,  // offset: 1 MiB
+                                         sizeof corrupt_data, corrupt_data));
 
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION,
             avb_slot_verify(ops_.avb_ops(), requested_partitions, "_a",
@@ -781,9 +786,10 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
       "Flags:                    0\n"
       "Descriptors:\n"
       "    Chain Partition descriptor:\n"
-      "      Partition Name:        boot\n"
-      "      Rollback Index Slot:   1\n"
-      "      Public key (sha1):     2597c218aae470a130f61162feaae70afd97f011\n"
+      "      Partition Name:          boot\n"
+      "      Rollback Index Location: 1\n"
+      "      Public key (sha1):       "
+      "2597c218aae470a130f61162feaae70afd97f011\n"
       "    Kernel Cmdline descriptor:\n"
       "      Flags:                 0\n"
       "      Kernel Cmdline:        'cmdline2 in vbmeta'\n",
@@ -831,7 +837,7 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
-  for (size_t n = 2; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS; n++) {
+  for (size_t n = 2; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
     EXPECT_EQ(0UL, slot_data->rollback_indexes[n]);
   }
   avb_slot_verify_data_free(slot_data);

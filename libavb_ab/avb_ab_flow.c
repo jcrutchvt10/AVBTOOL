@@ -291,9 +291,9 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
 
   /* Update stored rollback index such that the stored rollback index
    * is the largest value supporting all currently bootable slots. Do
-   * this for every rollback index slot.
+   * this for every rollback index location.
    */
-  for (n = 0; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS; n++) {
+  for (n = 0; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
     uint64_t rollback_index_value = 0;
 
     if (slot_data[0] != NULL && slot_data[1] != NULL) {
