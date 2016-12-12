@@ -1213,13 +1213,18 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
   See the |AvbKernelCmdlineDescriptor| C struct for more information.
 
   Attributes:
+    flags: Flags.
     kernel_cmdline: The kernel command-line.
   """
 
   TAG = 3
-  SIZE = 20
+  SIZE = 24
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
+                   'L'  # flags
                    'L')  # cmdline length (bytes)
+
+  FLAGS_USE_ONLY_IF_HASHTREE_NOT_DISABLED = (1 << 0)
+  FLAGS_USE_ONLY_IF_HASHTREE_DISABLED = (1 << 1)
 
   def __init__(self, data=None):
     """Initializes a new kernel cmdline descriptor.
@@ -1234,7 +1239,7 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
     assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
 
     if data:
-      (tag, num_bytes_following, kernel_cmdline_length) = (
+      (tag, num_bytes_following, self.flags, kernel_cmdline_length) = (
           struct.unpack(self.FORMAT_STRING, data[0:self.SIZE]))
       expected_size = round_to_multiple(self.SIZE - 16 + kernel_cmdline_length,
                                         8)
@@ -1247,6 +1252,7 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
       # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
       self.kernel_cmdline.decode('utf-8')
     else:
+      self.flags = 0
       self.kernel_cmdline = ''
 
   def print_desc(self, o):
@@ -1256,6 +1262,7 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
       o: The object to write the output to.
     """
     o.write('    Kernel Cmdline descriptor:\n')
+    o.write('      Flags:                 {}\n'.format(self.flags))
     o.write('      Kernel Cmdline:        {}\n'.format(repr(
         self.kernel_cmdline)))
 
@@ -1270,7 +1277,7 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
     nbf_with_padding = round_to_multiple(num_bytes_following, 8)
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
-                       len(encoded_str))
+                       self.flags, len(encoded_str))
     padding = struct.pack(str(padding_size) + 'x')
     ret = desc + encoded_str + padding
     return bytearray(ret)
@@ -1464,7 +1471,7 @@ class AvbVBMetaHeader(object):
   SIZE = 256
 
   # Keep in sync with |reserved| field of |AvbVBMetaImageHeader|.
-  RESERVED = 136
+  RESERVED = 132
 
   # Keep in sync with |AvbVBMetaImageHeader|.
   FORMAT_STRING = ('!4s2L'  # magic, 2 x version
@@ -1475,7 +1482,8 @@ class AvbVBMetaHeader(object):
                    '2Q'  # offset, size (public key)
                    '2Q'  # offset, size (public key metadata)
                    '2Q'  # offset, size (descriptors)
-                   'Q' +  # rollback_index
+                   'Q'  # rollback_index
+                   'L' +  # flags
                    str(RESERVED) + 'x')  # padding for reserved bytes
 
   def __init__(self, data=None):
@@ -1497,7 +1505,8 @@ class AvbVBMetaHeader(object):
        self.public_key_size, self.public_key_metadata_offset,
        self.public_key_metadata_size, self.descriptors_offset,
        self.descriptors_size,
-       self.rollback_index) = struct.unpack(self.FORMAT_STRING, data)
+       self.rollback_index,
+       self.flags) = struct.unpack(self.FORMAT_STRING, data)
       # Nuke NUL-bytes at the end of the string.
       if self.magic != 'AVB0':
         raise AvbError('Given image does not look like a vbmeta image.')
@@ -1519,6 +1528,7 @@ class AvbVBMetaHeader(object):
       self.descriptors_offset = 0
       self.descriptors_size = 0
       self.rollback_index = 0
+      self.flags = 0
 
   def save(self, output):
     """Serializes the header (256 bytes) to disk.
@@ -1533,7 +1543,8 @@ class AvbVBMetaHeader(object):
         self.hash_size, self.signature_offset, self.signature_size,
         self.public_key_offset, self.public_key_size,
         self.public_key_metadata_offset, self.public_key_metadata_size,
-        self.descriptors_offset, self.descriptors_size, self.rollback_index))
+        self.descriptors_offset, self.descriptors_size, self.rollback_index,
+        self.flags))
 
   def encode(self):
     """Serializes the header (256) to a bytearray().
@@ -1549,7 +1560,7 @@ class AvbVBMetaHeader(object):
                        self.signature_size, self.public_key_offset,
                        self.public_key_size, self.public_key_metadata_offset,
                        self.public_key_metadata_size, self.descriptors_offset,
-                       self.descriptors_size, self.rollback_index)
+                       self.descriptors_size, self.rollback_index, self.flags)
 
 
 class Avb(object):
@@ -1676,6 +1687,7 @@ class Avb(object):
         header.auxiliary_data_block_size))
     o.write('Algorithm:                {}\n'.format(alg_name))
     o.write('Rollback Index:           {}\n'.format(header.rollback_index))
+    o.write('Flags:                    {}\n'.format(header.flags))
 
     # Print descriptors.
     num_printed = 0
@@ -1725,15 +1737,16 @@ class Avb(object):
 
     return footer, h, descriptors, image.image_size
 
-  def _get_cmdline_descriptor_for_dm_verity(self, image):
-    """Generate kernel cmdline descriptor for dm-verity.
+  def _get_cmdline_descriptors_for_dm_verity(self, image):
+    """Generate kernel cmdline descriptors for dm-verity.
 
     Arguments:
       image: An ImageHandler (vbmeta or footer) with a hashtree descriptor.
 
     Returns:
-      A AvbKernelCmdlineDescriptor with dm-verity kernel cmdline
-      instructions for the hashtree.
+      A list with two AvbKernelCmdlineDescriptor with dm-verity kernel cmdline
+      instructions. There is one for when hashtree is not disabled and one for
+      when it is.
 
     Raises:
       AvbError: If  |image| doesn't have a hashtree descriptor.
@@ -1777,15 +1790,26 @@ class Avb(object):
     else:
       c += ' 1'  # number of optional args
       c += ' ignore_zero_blocks'
-    c += '"'
+    c += '" root=0xfd00'
 
+    # Now that we have the command-line, generate the descriptor.
     desc = AvbKernelCmdlineDescriptor()
     desc.kernel_cmdline = c
-    return desc
+    desc.flags = (
+        AvbKernelCmdlineDescriptor.FLAGS_USE_ONLY_IF_HASHTREE_NOT_DISABLED)
+
+    # The descriptor for when hashtree verification is disabled is a lot
+    # simpler - we just set the root to the partition.
+    desc_no_ht = AvbKernelCmdlineDescriptor()
+    desc_no_ht.kernel_cmdline = 'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'
+    desc_no_ht.flags = (
+        AvbKernelCmdlineDescriptor.FLAGS_USE_ONLY_IF_HASHTREE_DISABLED)
+
+    return [desc, desc_no_ht]
 
   def make_vbmeta_image(self, output, chain_partitions, algorithm_name,
                         key_path, public_key_metadata_path, rollback_index,
-                        props, props_from_file, kernel_cmdlines,
+                        flags, props, props_from_file, kernel_cmdlines,
                         generate_dm_verity_cmdline_from_hashtree,
                         include_descriptors_from_image):
     """Implements the 'make_vbmeta_image' command.
@@ -1797,6 +1821,7 @@ class Avb(object):
       key_path: Path to key to use or None.
       public_key_metadata_path: Path to public key metadata or None.
       rollback_index: The rollback index to use.
+      flags: Flags value to use in the image.
       props: Properties to insert (list of strings of the form 'key:value').
       props_from_file: Properties to insert (list of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
@@ -1826,7 +1851,7 @@ class Avb(object):
 
     vbmeta_blob = self._generate_vbmeta_blob(
         algorithm_name, key_path, public_key_metadata_path, descriptors,
-        rollback_index, props, props_from_file, kernel_cmdlines,
+        rollback_index, flags, props, props_from_file, kernel_cmdlines,
         generate_dm_verity_cmdline_from_hashtree,
         include_descriptors_from_image)
 
@@ -1836,7 +1861,7 @@ class Avb(object):
 
   def _generate_vbmeta_blob(self, algorithm_name, key_path,
                             public_key_metadata_path, descriptors,
-                            rollback_index, props, props_from_file,
+                            rollback_index, flags, props, props_from_file,
                             kernel_cmdlines,
                             generate_dm_verity_cmdline_from_hashtree,
                             include_descriptors_from_image):
@@ -1856,6 +1881,7 @@ class Avb(object):
       public_key_metadata_path: Path to public key metadata or None.
       descriptors: A list of descriptors to insert or None.
       rollback_index: The rollback index to use.
+      flags: Flags to use in the image.
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
@@ -1910,8 +1936,9 @@ class Avb(object):
     if generate_dm_verity_cmdline_from_hashtree:
       image_handler = ImageHandler(
           generate_dm_verity_cmdline_from_hashtree.name)
-      encoded_descriptors.extend(self._get_cmdline_descriptor_for_dm_verity(
-          image_handler).encode())
+      cmdline_desc = self._get_cmdline_descriptors_for_dm_verity(image_handler)
+      encoded_descriptors.extend(cmdline_desc[0].encode())
+      encoded_descriptors.extend(cmdline_desc[1].encode())
 
     # Add kernel command-lines.
     if kernel_cmdlines:
@@ -1972,6 +1999,7 @@ class Avb(object):
     h.signature_size = alg.signature_num_bytes
 
     h.rollback_index = rollback_index
+    h.flags = flags
 
     # Generate Header data block.
     header_data_blob = h.encode()
@@ -2121,10 +2149,13 @@ class Avb(object):
       h_desc.salt = salt
       h_desc.digest = digest
 
+      # Flags are only allowed on top-level vbmeta struct.
+      flags = 0
+
       # Generate the VBMeta footer.
       vbmeta_blob = self._generate_vbmeta_blob(
           algorithm_name, key_path, public_key_metadata_path, [h_desc],
-          rollback_index, props, props_from_file, kernel_cmdlines,
+          rollback_index, flags, props, props_from_file, kernel_cmdlines,
           generate_dm_verity_cmdline_from_hashtree,
           include_descriptors_from_image)
 
@@ -2171,8 +2202,8 @@ class Avb(object):
   def add_hashtree_footer(self, image_filename, partition_size, partition_name,
                           generate_fec, fec_num_roots, hash_algorithm,
                           block_size, salt, algorithm_name, key_path,
-                          public_key_metadata_path, rollback_index, props,
-                          props_from_file, kernel_cmdlines,
+                          public_key_metadata_path, rollback_index,
+                          props, props_from_file, kernel_cmdlines,
                           generate_dm_verity_cmdline_from_hashtree,
                           include_descriptors_from_image,
                           calc_max_image_size):
@@ -2331,11 +2362,14 @@ class Avb(object):
         ht_desc.fec_offset = fec_offset
         ht_desc.fec_size = len(fec_data)
 
+      # Flags are only allowed on top-level vbmeta struct.
+      flags = 0
+
       # Generate the VBMeta footer and add padding as needed.
       vbmeta_offset = tree_offset + len_hashtree_and_fec
       vbmeta_blob = self._generate_vbmeta_blob(
           algorithm_name, key_path, public_key_metadata_path, [ht_desc],
-          rollback_index, props, props_from_file, kernel_cmdlines,
+          rollback_index, flags, props, props_from_file, kernel_cmdlines,
           generate_dm_verity_cmdline_from_hashtree,
           include_descriptors_from_image)
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
@@ -2609,6 +2643,10 @@ class AvbTool(object):
                             help='Allow signed integrity-data for partition',
                             metavar='PART_NAME:ROLLBACK_SLOT:KEY_PATH',
                             action='append')
+    sub_parser.add_argument('--flags',
+                            help='VBMeta flags',
+                            type=parse_number,
+                            default=0)
     sub_parser.set_defaults(func=self.make_vbmeta_image)
 
     sub_parser = subparsers.add_parser('add_hash_footer',
@@ -2729,7 +2767,7 @@ class AvbTool(object):
     self.avb.make_vbmeta_image(args.output, args.chain_partition,
                                args.algorithm, args.key,
                                args.public_key_metadata, args.rollback_index,
-                               args.prop, args.prop_from_file,
+                               args.flags, args.prop, args.prop_from_file,
                                args.kernel_cmdline,
                                args.generate_dm_verity_cmdline_from_hashtree,
                                args.include_descriptors_from_image)
