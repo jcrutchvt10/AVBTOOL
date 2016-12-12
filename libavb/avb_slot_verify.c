@@ -194,10 +194,11 @@ fail:
 
 static AvbSlotVerifyResult load_and_verify_vbmeta(
     AvbOps* ops, const char* const* requested_partitions, const char* ab_suffix,
-    bool allow_verification_error, int rollback_index_slot,
-    const char* partition_name, size_t partition_name_len,
-    const uint8_t* expected_public_key, size_t expected_public_key_length,
-    AvbSlotVerifyData* slot_data, AvbAlgorithmType* out_algorithm_type) {
+    bool allow_verification_error, AvbVBMetaImageFlags toplevel_vbmeta_flags,
+    int rollback_index_slot, const char* partition_name,
+    size_t partition_name_len, const uint8_t* expected_public_key,
+    size_t expected_public_key_length, AvbSlotVerifyData* slot_data,
+    AvbAlgorithmType* out_algorithm_type) {
   char full_partition_name[PART_NAME_MAX_SIZE];
   AvbSlotVerifyResult ret;
   AvbIOResult io_ret;
@@ -334,6 +335,18 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
   /* Byteswap the header. */
   avb_vbmeta_image_header_to_host_byte_order((AvbVBMetaImageHeader*)vbmeta_buf,
                                              &vbmeta_header);
+
+  /* If we're the toplevel, assign flags so they'll be passed down. */
+  if (is_main_vbmeta) {
+    toplevel_vbmeta_flags = (AvbVBMetaImageFlags)vbmeta_header.flags;
+  } else {
+    if (vbmeta_header.flags != 0) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
+      avb_errorv(full_partition_name,
+                 ": chained vbmeta image has non-zero flags\n", NULL);
+      goto out;
+    }
+  }
 
   /* Check if key used to make signature matches what is expected. */
   if (pk_data != NULL) {
@@ -475,9 +488,9 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
 
         sub_ret = load_and_verify_vbmeta(
             ops, requested_partitions, ab_suffix, allow_verification_error,
-            chain_desc.rollback_index_slot, (const char*)chain_partition_name,
-            chain_desc.partition_name_len, chain_public_key,
-            chain_desc.public_key_len, slot_data,
+            toplevel_vbmeta_flags, chain_desc.rollback_index_slot,
+            (const char*)chain_partition_name, chain_desc.partition_name_len,
+            chain_public_key, chain_desc.public_key_len, slot_data,
             NULL /* out_algorithm_type */);
         if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
           ret = sub_ret;
@@ -490,6 +503,7 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
       case AVB_DESCRIPTOR_TAG_KERNEL_CMDLINE: {
         const uint8_t* kernel_cmdline;
         AvbKernelCmdlineDescriptor kernel_cmdline_desc;
+        bool apply_cmdline;
 
         if (!avb_kernel_cmdline_descriptor_validate_and_byteswap(
                 (AvbKernelCmdlineDescriptor*)descriptors[n],
@@ -511,31 +525,51 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
           goto out;
         }
 
-        if (slot_data->cmdline == NULL) {
-          slot_data->cmdline =
-              avb_calloc(kernel_cmdline_desc.kernel_cmdline_length + 1);
-          if (slot_data->cmdline == NULL) {
-            ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-            goto out;
+        /* Compare the flags for top-level VBMeta struct with flags in
+         * the command-line descriptor so command-line snippets only
+         * intended for a certain mode (dm-verity enabled/disabled)
+         * are skipped if applicable.
+         */
+        apply_cmdline = true;
+        if (toplevel_vbmeta_flags & AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED) {
+          if (kernel_cmdline_desc.flags &
+              AVB_KERNEL_CMDLINE_FLAGS_USE_ONLY_IF_HASHTREE_NOT_DISABLED) {
+            apply_cmdline = false;
           }
-          avb_memcpy(slot_data->cmdline, kernel_cmdline,
-                     kernel_cmdline_desc.kernel_cmdline_length);
         } else {
-          /* new cmdline is: <existing_cmdline> + ' ' + <newcmdline> + '\0' */
-          size_t orig_size = avb_strlen(slot_data->cmdline);
-          size_t new_size =
-              orig_size + 1 + kernel_cmdline_desc.kernel_cmdline_length + 1;
-          char* new_cmdline = avb_calloc(new_size);
-          if (new_cmdline == NULL) {
-            ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-            goto out;
+          if (kernel_cmdline_desc.flags &
+              AVB_KERNEL_CMDLINE_FLAGS_USE_ONLY_IF_HASHTREE_DISABLED) {
+            apply_cmdline = false;
           }
-          avb_memcpy(new_cmdline, slot_data->cmdline, orig_size);
-          new_cmdline[orig_size] = ' ';
-          avb_memcpy(new_cmdline + orig_size + 1, kernel_cmdline,
-                     kernel_cmdline_desc.kernel_cmdline_length);
-          avb_free(slot_data->cmdline);
-          slot_data->cmdline = new_cmdline;
+        }
+
+        if (apply_cmdline) {
+          if (slot_data->cmdline == NULL) {
+            slot_data->cmdline =
+                avb_calloc(kernel_cmdline_desc.kernel_cmdline_length + 1);
+            if (slot_data->cmdline == NULL) {
+              ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+              goto out;
+            }
+            avb_memcpy(slot_data->cmdline, kernel_cmdline,
+                       kernel_cmdline_desc.kernel_cmdline_length);
+          } else {
+            /* new cmdline is: <existing_cmdline> + ' ' + <newcmdline> + '\0' */
+            size_t orig_size = avb_strlen(slot_data->cmdline);
+            size_t new_size =
+                orig_size + 1 + kernel_cmdline_desc.kernel_cmdline_length + 1;
+            char* new_cmdline = avb_calloc(new_size);
+            if (new_cmdline == NULL) {
+              ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+              goto out;
+            }
+            avb_memcpy(new_cmdline, slot_data->cmdline, orig_size);
+            new_cmdline[orig_size] = ' ';
+            avb_memcpy(new_cmdline + orig_size + 1, kernel_cmdline,
+                       kernel_cmdline_desc.kernel_cmdline_length);
+            avb_free(slot_data->cmdline);
+            slot_data->cmdline = new_cmdline;
+          }
         }
       } break;
 
@@ -750,6 +784,7 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
 
   ret = load_and_verify_vbmeta(
       ops, requested_partitions, ab_suffix, allow_verification_error,
+      0, /* toplevel_vbmeta_flags */
       0 /* rollback_index_slot */, "vbmeta", avb_strlen("vbmeta"),
       NULL /* expected_public_key */, 0 /* expected_public_key_length */,
       slot_data, &algorithm_type);
