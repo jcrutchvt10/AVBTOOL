@@ -42,6 +42,8 @@ class AvbSlotVerifyTest : public BaseAvbToolTest {
     ops_.set_stored_is_device_unlocked(false);
   }
 
+  void CmdlineWithHashtreeVerification(bool hashtree_verification_on);
+
   FakeAvbOps ops_;
 };
 
@@ -282,11 +284,13 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
       "VBMeta image version:     1.0\n"
       "Header Block:             256 bytes\n"
       "Authentication Block:     576 bytes\n"
-      "Auxiliary Block:          832 bytes\n"
+      "Auxiliary Block:          896 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           4\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
       "      Kernel Cmdline:        'cmdline in vbmeta "
       "$(ANDROID_BOOT_PARTUUID)'\n"
       "    Hash descriptor:\n"
@@ -297,6 +301,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
       "      Digest:                "
       "184cb36243adb8b87d2d8c4802de32125fe294ec46753d732144ee65df68a23d\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
       "      Kernel Cmdline:        'cmdline in hash footer "
       "$(ANDROID_SYSTEM_PARTUUID)'\n",
       InfoImage(vbmeta_image_path_));
@@ -344,9 +349,9 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
       "cmdline in hash footer 1234-fake-guid-for:system_a "
       "androidboot.slot_suffix=_a "
       "androidboot.vbmeta.device_state=locked "
-      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1664 "
+      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1728 "
       "androidboot.vbmeta.digest="
-      "90236fbd72c81783915483a54d7c5d26ec9107e708cd95b3052a569d506984a5",
+      "aca82b8c227721a389e89643c7e8ced39b3c587337bc9c10539c09a50026121f",
       std::string(slot_data->cmdline));
   EXPECT_EQ(4UL, slot_data->rollback_indexes[0]);
   for (size_t n = 1; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS; n++) {
@@ -447,12 +452,14 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       "Auxiliary Block:          1728 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           11\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Chain Partition descriptor:\n"
       "      Partition Name:        boot\n"
       "      Rollback Index Slot:   1\n"
       "      Public key (sha1):     2597c218aae470a130f61162feaae70afd97f011\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
       "      Kernel Cmdline:        'cmdline2 in vbmeta'\n",
       InfoImage(vbmeta_image_path_));
 
@@ -488,7 +495,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=2560 "
       "androidboot.vbmeta.digest="
-      "42574881ed55f944e68169918609403e3e74564897d9a4da72d31148b390b34f",
+      "885bd66f0d8e95631ecd5052ca34323cdc69948b370a45b671a2d7e164c36972",
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
@@ -707,12 +714,14 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
       "Auxiliary Block:          1728 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           11\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Chain Partition descriptor:\n"
       "      Partition Name:        boot\n"
       "      Rollback Index Slot:   1\n"
       "      Public key (sha1):     2597c218aae470a130f61162feaae70afd97f011\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
       "      Kernel Cmdline:        'cmdline2 in vbmeta'\n",
       InfoImage(vbmeta_image_path_));
 
@@ -749,7 +758,7 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=2560 "
       "androidboot.vbmeta.digest="
-      "42574881ed55f944e68169918609403e3e74564897d9a4da72d31148b390b34f",
+      "885bd66f0d8e95631ecd5052ca34323cdc69948b370a45b671a2d7e164c36972",
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
@@ -797,6 +806,7 @@ TEST_F(AvbSlotVerifyTest, PartitionsOtherThanBoot) {
       "Auxiliary Block:          896 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           4\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Hash descriptor:\n"
       "      Image Size:            5242880 bytes\n"
@@ -875,4 +885,111 @@ TEST_F(AvbSlotVerifyTest, PublicKeyMetadata) {
       "eb65f3384a8e37b164743d35f70c527769f4a2152f5129151a7987d5d82efa6d",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
+}
+
+void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
+    bool hashtree_verification_on) {
+  const size_t rootfs_size = 1028 * 1024;
+  const size_t partition_size = 1536 * 1024;
+
+  // Generate a 1028 KiB file with known content.
+  std::vector<uint8_t> rootfs;
+  rootfs.resize(rootfs_size);
+  for (size_t n = 0; n < rootfs_size; n++) rootfs[n] = uint8_t(n);
+  base::FilePath rootfs_path = testdir_.Append("rootfs.bin");
+  EXPECT_EQ(rootfs_size,
+            static_cast<const size_t>(base::WriteFile(
+                rootfs_path, reinterpret_cast<const char*>(rootfs.data()),
+                rootfs.size())));
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name foobar "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem",
+                 rootfs_path.value().c_str(), (int)partition_size);
+
+  // Check that we correctly generate dm-verity kernel cmdline
+  // snippets, if requested.
+  GenerateVBMetaImage(
+      "vbmeta_a.img", "SHA256_RSA2048", 4,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf("--generate_dm_verity_cmdline_from_hashtree %s "
+                         "--kernel_cmdline should_be_in_both=1 "
+                         "--algorithm SHA256_RSA2048 "
+                         "--flags %d ",
+                         rootfs_path.value().c_str(),
+                         hashtree_verification_on
+                             ? 0
+                             : AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED));
+
+  EXPECT_EQ(
+      base::StringPrintf(
+          "VBMeta image version:     1.0\n"
+          "Header Block:             256 bytes\n"
+          "Authentication Block:     576 bytes\n"
+          "Auxiliary Block:          896 bytes\n"
+          "Algorithm:                SHA256_RSA2048\n"
+          "Rollback Index:           4\n"
+          "Flags:                    %d\n"
+          "Descriptors:\n"
+          "    Kernel Cmdline descriptor:\n"
+          "      Flags:                 1\n"
+          "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 2056 verity "
+          "1 PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
+          "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) 4096 4096 257 257 sha1 "
+          "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 1 "
+          "ignore_zero_blocks\" root=0xfd00'\n"
+          "    Kernel Cmdline descriptor:\n"
+          "      Flags:                 2\n"
+          "      Kernel Cmdline:        "
+          "'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'\n"
+          "    Kernel Cmdline descriptor:\n"
+          "      Flags:                 0\n"
+          "      Kernel Cmdline:        'should_be_in_both=1'\n",
+          hashtree_verification_on ? 0
+                                   : AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED),
+      InfoImage(vbmeta_image_path_));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  // Check that avb_slot_verify() picks the cmdline decsriptors based
+  // on their flags value.
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(), requested_partitions, "_a",
+                            false /* allow_verification_error */, &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  if (hashtree_verification_on) {
+    EXPECT_EQ(
+        "dm=\"1 vroot none ro 1,0 2056 verity 1 "
+        "PARTUUID=1234-fake-guid-for:system_a "
+        "PARTUUID=1234-fake-guid-for:system_a 4096 4096 257 257 sha1 "
+        "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 1 "
+        "ignore_zero_blocks\" root=0xfd00 should_be_in_both=1 "
+        "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+        "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1728 "
+        "androidboot.vbmeta.digest="
+        "c8b413fa7302417b9fe26319b8ef4867d30010e6105e043620ed94db5db7891f",
+        std::string(slot_data->cmdline));
+  } else {
+    EXPECT_EQ(
+        "root=PARTUUID=1234-fake-guid-for:system_a should_be_in_both=1 "
+        "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+        "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1728 "
+        "androidboot.vbmeta.digest="
+        "94af92ac6dc4fa86b9f93c182b3149c2aebe5b26f1c41fd61905082ff2f750c6",
+        std::string(slot_data->cmdline));
+  }
+  avb_slot_verify_data_free(slot_data);
+}
+
+TEST_F(AvbSlotVerifyTest, CmdlineWithHashtreeVerificationOff) {
+  CmdlineWithHashtreeVerification(false);
+}
+
+TEST_F(AvbSlotVerifyTest, CmdlineWithHashtreeVerificationOn) {
+  CmdlineWithHashtreeVerification(true);
 }

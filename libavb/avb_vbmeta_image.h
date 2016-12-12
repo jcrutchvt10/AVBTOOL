@@ -49,6 +49,15 @@ extern "C" {
 #define AVB_MAJOR_VERSION 1
 #define AVB_MINOR_VERSION 0
 
+/* Flags for the vbmeta image.
+ *
+ * AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED: If this flag is set,
+ * hashtree image verification will be disabled.
+ */
+typedef enum {
+  AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED = (1 << 0)
+} AvbVBMetaImageFlags;
+
 /* Binary format for header of the vbmeta image.
  *
  * The vbmeta image consists of three blocks:
@@ -154,10 +163,15 @@ typedef struct AvbVBMetaImageHeader {
    */
   uint64_t rollback_index;
 
-  /* 120: Padding to ensure struct is size AVB_VBMETA_IMAGE_HEADER_SIZE
+  /* 120: Flags from the AvbVBMetaImageFlags enumeration. This must be
+   * set to zero if the vbmeta image is not a top-level image.
+   */
+  uint32_t flags;
+
+  /* 124: Padding to ensure struct is size AVB_VBMETA_IMAGE_HEADER_SIZE
    * bytes. This must be set to zeroes.
    */
-  uint8_t reserved[136];
+  uint8_t reserved[132];
 } AVB_ATTR_PACKED AvbVBMetaImageHeader;
 
 /* Copies |src| to |dest|, byte-swapping fields in the process.
