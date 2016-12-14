@@ -133,28 +133,30 @@ struct AvbOps {
                                             size_t public_key_metadata_length,
                                             bool* out_is_trusted);
 
-  /* Gets the rollback index corresponding to the slot given by
-   * |rollback_index_slot|. The value is returned in
+  /* Gets the rollback index corresponding to the location given by
+   * |rollback_index_location|. The value is returned in
    * |out_rollback_index|. Returns AVB_IO_RESULT_OK if the rollback
    * index was retrieved, otherwise an error code.
    *
-   * A device may have a limited amount of rollback index slots (say,
-   * one or four) so may error out if |rollback_index_slot| exceeds
+   * A device may have a limited amount of rollback index locations (say,
+   * one or four) so may error out if |rollback_index_location| exceeds
    * this number.
    */
-  AvbIOResult (*read_rollback_index)(AvbOps* ops, size_t rollback_index_slot,
+  AvbIOResult (*read_rollback_index)(AvbOps* ops,
+                                     size_t rollback_index_location,
                                      uint64_t* out_rollback_index);
 
-  /* Sets the rollback index corresponding to the slot given by
-   * |rollback_index_slot| to |rollback_index|. Returns
+  /* Sets the rollback index corresponding to the location given by
+   * |rollback_index_location| to |rollback_index|. Returns
    * AVB_IO_RESULT_OK if the rollback index was set, otherwise an
    * error code.
    *
-   * A device may have a limited amount of rollback index slots (say,
-   * one or four) so may error out if |rollback_index_slot| exceeds
+   * A device may have a limited amount of rollback index locations (say,
+   * one or four) so may error out if |rollback_index_location| exceeds
    * this number.
    */
-  AvbIOResult (*write_rollback_index)(AvbOps* ops, size_t rollback_index_slot,
+  AvbIOResult (*write_rollback_index)(AvbOps* ops,
+                                      size_t rollback_index_location,
                                       uint64_t rollback_index);
 
   /* Gets whether the device is unlocked. The value is returned in
