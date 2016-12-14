@@ -33,6 +33,9 @@
 #include <base/strings/string_util.h>
 #include <base/strings/stringprintf.h>
 
+// Encodes |len| bytes of |data| as a lower-case hex-string.
+std::string mem_to_hexstring(const uint8_t* data, size_t len);
+
 /* Utility macro to run the command expressed by the printf()-style string
  * |command_format| using the system(3) utility function. Will assert unless
  * the command exits normally with exit status |expected_exit_status|.

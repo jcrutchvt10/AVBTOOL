@@ -327,9 +327,12 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
 
   // Now verify the slot data. The vbmeta data should match our
   // vbmeta_image_ member.
-  EXPECT_EQ(slot_data->vbmeta_size, vbmeta_image_.size());
-  EXPECT_EQ(0, memcmp(vbmeta_image_.data(), slot_data->vbmeta_data,
-                      slot_data->vbmeta_size));
+  EXPECT_EQ(size_t(1), slot_data->num_vbmeta_images);
+  EXPECT_EQ("vbmeta", std::string(slot_data->vbmeta_images[0].partition_name));
+  EXPECT_EQ(slot_data->vbmeta_images[0].vbmeta_size, vbmeta_image_.size());
+  EXPECT_EQ(
+      0, memcmp(vbmeta_image_.data(), slot_data->vbmeta_images[0].vbmeta_data,
+                slot_data->vbmeta_images[0].vbmeta_size));
 
   // The boot image data should match what is generated above with
   // GenerateImage().
@@ -463,6 +466,33 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       "      Kernel Cmdline:        'cmdline2 in vbmeta'\n",
       InfoImage(vbmeta_image_path_));
 
+  EXPECT_EQ(
+      "Footer version:           1.0\n"
+      "Image size:               16777216 bytes\n"
+      "Original image size:      5242880 bytes\n"
+      "VBMeta offset:            5242880\n"
+      "VBMeta size:              2624 bytes\n"
+      "--\n"
+      "VBMeta image version:     1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     1088 bytes\n"
+      "Auxiliary Block:          1280 bytes\n"
+      "Algorithm:                SHA256_RSA4096\n"
+      "Rollback Index:           12\n"
+      "Flags:                    0\n"
+      "Descriptors:\n"
+      "    Hash descriptor:\n"
+      "      Image Size:            5242880 bytes\n"
+      "      Hash Algorithm:        sha256\n"
+      "      Partition Name:        boot\n"
+      "      Salt:                  deadbeef\n"
+      "      Digest:                "
+      "184cb36243adb8b87d2d8c4802de32125fe294ec46753d732144ee65df68a23d\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
+      "      Kernel Cmdline:        'cmdline2 in hash footer'\n",
+      InfoImage(boot_path));
+
   ops_.set_expected_public_key(
       PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
 
@@ -472,11 +502,45 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
                             false /* allow_verification_error */, &slot_data));
   EXPECT_NE(nullptr, slot_data);
 
-  // Now verify the slot data. The vbmeta data should match our
-  // vbmeta_image_ member.
-  EXPECT_EQ(slot_data->vbmeta_size, vbmeta_image_.size());
-  EXPECT_EQ(0, memcmp(vbmeta_image_.data(), slot_data->vbmeta_data,
-                      slot_data->vbmeta_size));
+  // Now verify the slot data. We should have two vbmeta
+  // structs. Verify both of them. Note that the A/B suffix isn't
+  // appended.
+  EXPECT_EQ(size_t(2), slot_data->num_vbmeta_images);
+  EXPECT_EQ("vbmeta", std::string(slot_data->vbmeta_images[0].partition_name));
+  EXPECT_EQ(slot_data->vbmeta_images[0].vbmeta_size, vbmeta_image_.size());
+  EXPECT_EQ(
+      0, memcmp(vbmeta_image_.data(), slot_data->vbmeta_images[0].vbmeta_data,
+                slot_data->vbmeta_images[0].vbmeta_size));
+  // And for the second vbmeta struct we check that the descriptors
+  // match the info_image output from above.
+  EXPECT_EQ("boot", std::string(slot_data->vbmeta_images[1].partition_name));
+  const AvbDescriptor** descriptors =
+      avb_descriptor_get_all(slot_data->vbmeta_images[1].vbmeta_data,
+                             slot_data->vbmeta_images[1].vbmeta_size, NULL);
+  EXPECT_NE(nullptr, descriptors);
+  AvbHashDescriptor hash_desc;
+  EXPECT_EQ(true, avb_hash_descriptor_validate_and_byteswap(
+                      ((AvbHashDescriptor*)descriptors[0]), &hash_desc));
+  const uint8_t* desc_end = reinterpret_cast<const uint8_t*>(descriptors[0]) +
+                            sizeof(AvbHashDescriptor);
+  uint64_t o = 0;
+  EXPECT_EQ("boot", std::string(reinterpret_cast<const char*>(desc_end + o),
+                                hash_desc.partition_name_len));
+  o += hash_desc.partition_name_len;
+  EXPECT_EQ("deadbeef", mem_to_hexstring(desc_end + o, hash_desc.salt_len));
+  o += hash_desc.salt_len;
+  EXPECT_EQ("184cb36243adb8b87d2d8c4802de32125fe294ec46753d732144ee65df68a23d",
+            mem_to_hexstring(desc_end + o, hash_desc.digest_len));
+  AvbKernelCmdlineDescriptor cmdline_desc;
+  EXPECT_EQ(true,
+            avb_kernel_cmdline_descriptor_validate_and_byteswap(
+                ((AvbKernelCmdlineDescriptor*)descriptors[1]), &cmdline_desc));
+  desc_end = reinterpret_cast<const uint8_t*>(descriptors[1]) +
+             sizeof(AvbKernelCmdlineDescriptor);
+  EXPECT_EQ("cmdline2 in hash footer",
+            std::string(reinterpret_cast<const char*>(desc_end),
+                        cmdline_desc.kernel_cmdline_length));
+  avb_free(descriptors);
 
   // The boot image data should match what is generated above with
   // GenerateImage().
@@ -493,9 +557,9 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       "cmdline2 in hash footer cmdline2 in vbmeta "
       "androidboot.slot_suffix=_a "
       "androidboot.vbmeta.device_state=locked "
-      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=2560 "
+      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=5184 "
       "androidboot.vbmeta.digest="
-      "885bd66f0d8e95631ecd5052ca34323cdc69948b370a45b671a2d7e164c36972",
+      "4136792840187a599f4b9a76aa7be72c22f8c1f478d246d1494cd5fe6dab5ec4",
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
@@ -734,11 +798,16 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
                             false /* allow_verification_error */, &slot_data));
   EXPECT_NE(nullptr, slot_data);
 
-  // Now verify the slot data. The vbmeta data should match our
-  // vbmeta_image_ member.
-  EXPECT_EQ(slot_data->vbmeta_size, vbmeta_image_.size());
-  EXPECT_EQ(0, memcmp(vbmeta_image_.data(), slot_data->vbmeta_data,
-                      slot_data->vbmeta_size));
+  // Now verify the slot data. The first vbmeta data should match our
+  // vbmeta_image_ member and the second one should be for the 'boot'
+  // partition.
+  EXPECT_EQ(size_t(2), slot_data->num_vbmeta_images);
+  EXPECT_EQ("vbmeta", std::string(slot_data->vbmeta_images[0].partition_name));
+  EXPECT_EQ(slot_data->vbmeta_images[0].vbmeta_size, vbmeta_image_.size());
+  EXPECT_EQ(
+      0, memcmp(vbmeta_image_.data(), slot_data->vbmeta_images[0].vbmeta_data,
+                slot_data->vbmeta_images[0].vbmeta_size));
+  EXPECT_EQ("boot", std::string(slot_data->vbmeta_images[1].partition_name));
 
   // The boot image data should match what is generated above with
   // GenerateImage().
@@ -756,9 +825,9 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
   EXPECT_EQ(
       "cmdline2 in hash footer cmdline2 in vbmeta "
       "androidboot.vbmeta.device_state=locked "
-      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=2560 "
+      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=5184 "
       "androidboot.vbmeta.digest="
-      "885bd66f0d8e95631ecd5052ca34323cdc69948b370a45b671a2d7e164c36972",
+      "4136792840187a599f4b9a76aa7be72c22f8c1f478d246d1494cd5fe6dab5ec4",
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
@@ -836,9 +905,12 @@ TEST_F(AvbSlotVerifyTest, PartitionsOtherThanBoot) {
 
   // Now verify the slot data. The vbmeta data should match our
   // vbmeta_image_ member.
-  EXPECT_EQ(slot_data->vbmeta_size, vbmeta_image_.size());
-  EXPECT_EQ(0, memcmp(vbmeta_image_.data(), slot_data->vbmeta_data,
-                      slot_data->vbmeta_size));
+  EXPECT_EQ(size_t(1), slot_data->num_vbmeta_images);
+  EXPECT_EQ("vbmeta", std::string(slot_data->vbmeta_images[0].partition_name));
+  EXPECT_EQ(slot_data->vbmeta_images[0].vbmeta_size, vbmeta_image_.size());
+  EXPECT_EQ(
+      0, memcmp(vbmeta_image_.data(), slot_data->vbmeta_images[0].vbmeta_data,
+                slot_data->vbmeta_images[0].vbmeta_size));
 
   // The 'foo' and 'bar' image data should match what is generated
   // above with GenerateImage().

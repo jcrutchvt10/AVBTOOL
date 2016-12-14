@@ -39,6 +39,9 @@
 /* Maximum number of partitions that can be loaded with avb_slot_verify(). */
 #define MAX_NUMBER_OF_LOADED_PARTITIONS 32
 
+/* Maximum number of vbmeta images that can be loaded with avb_slot_verify(). */
+#define MAX_NUMBER_OF_VBMETA_IMAGES 32
+
 /* Maximum size of a vbmeta image - 64 KiB. */
 #define VBMETA_MAX_SIZE (64 * 1024)
 
@@ -215,6 +218,7 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
   size_t num_descriptors;
   size_t n;
   int is_main_vbmeta;
+  AvbVBMetaData* vbmeta_image_data = NULL;
 
   ret = AVB_SLOT_VERIFY_RESULT_OK;
 
@@ -422,6 +426,31 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     }
   }
 
+  /* Copy vbmeta to vbmeta_images before recursing. */
+  if (is_main_vbmeta) {
+    avb_assert(slot_data->num_vbmeta_images == 0);
+  } else {
+    avb_assert(slot_data->num_vbmeta_images > 0);
+  }
+  if (slot_data->num_vbmeta_images == MAX_NUMBER_OF_VBMETA_IMAGES) {
+    avb_errorv(full_partition_name, ": Too many vbmeta images.\n", NULL);
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  }
+  vbmeta_image_data = &slot_data->vbmeta_images[slot_data->num_vbmeta_images++];
+  vbmeta_image_data->partition_name = avb_strdup(partition_name);
+  vbmeta_image_data->vbmeta_data = vbmeta_buf;
+  /* Note that |vbmeta_buf| is actually |vbmeta_num_read| bytes long
+   * and this includes data past the end of the image. Pass the
+   * actual size of the vbmeta image. Also, no need to use
+   * avb_safe_add() since the header has already been verified.
+   */
+  vbmeta_image_data->vbmeta_size =
+      sizeof(AvbVBMetaImageHeader) +
+      vbmeta_header.authentication_data_block_size +
+      vbmeta_header.auxiliary_data_block_size;
+  vbmeta_image_data->verify_result = vbmeta_ret;
+
   /* Now go through all descriptors and take the appropriate action:
    *
    * - hash descriptor: Load data from partition, calculate hash, and
@@ -581,23 +610,6 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     }
   }
 
-  /* So far, so good. Copy needed data to user, if requested. */
-  if (is_main_vbmeta) {
-    if (slot_data->vbmeta_data != NULL) {
-      avb_free(slot_data->vbmeta_data);
-    }
-    /* Note that |vbmeta_buf| is actually |vbmeta_num_read| bytes long
-     * and this includes data past the end of the image. Pass the
-     * actual size of the vbmeta image. Also, no need to use
-     * avb_safe_add() since the header has already been verified.
-     */
-    slot_data->vbmeta_size = sizeof(AvbVBMetaImageHeader) +
-                             vbmeta_header.authentication_data_block_size +
-                             vbmeta_header.auxiliary_data_block_size;
-    slot_data->vbmeta_data = vbmeta_buf;
-    vbmeta_buf = NULL;
-  }
-
   if (rollback_index_slot >= AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS) {
     avb_errorv(full_partition_name, ": Invalid rollback_index_slot.\n", NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
@@ -612,8 +624,13 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
   }
 
 out:
-  if (vbmeta_buf != NULL) {
-    avb_free(vbmeta_buf);
+  /* If |vbmeta_image_data| isn't NULL it means that it adopted
+   * |vbmeta_buf| so in that case don't free it here.
+   */
+  if (vbmeta_image_data == NULL) {
+    if (vbmeta_buf != NULL) {
+      avb_free(vbmeta_buf);
+    }
   }
   if (descriptors != NULL) {
     avb_free(descriptors);
@@ -776,6 +793,12 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
     goto fail;
   }
+  slot_data->vbmeta_images =
+      avb_calloc(sizeof(AvbVBMetaData) * MAX_NUMBER_OF_VBMETA_IMAGES);
+  if (slot_data->vbmeta_images == NULL) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto fail;
+  }
   slot_data->loaded_partitions =
       avb_calloc(sizeof(AvbPartitionData) * MAX_NUMBER_OF_LOADED_PARTITIONS);
   if (slot_data->loaded_partitions == NULL) {
@@ -849,12 +872,17 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       case AVB_ALGORITHM_TYPE_SHA256_RSA4096:
       case AVB_ALGORITHM_TYPE_SHA256_RSA8192: {
         AvbSHA256Ctx ctx;
+        size_t n, total_size = 0;
         avb_sha256_init(&ctx);
-        avb_sha256_update(&ctx, slot_data->vbmeta_data, slot_data->vbmeta_size);
+        for (n = 0; n < slot_data->num_vbmeta_images; n++) {
+          avb_sha256_update(&ctx, slot_data->vbmeta_images[n].vbmeta_data,
+                            slot_data->vbmeta_images[n].vbmeta_size);
+          total_size += slot_data->vbmeta_images[n].vbmeta_size;
+        }
         if (!cmdline_append_option(slot_data, "androidboot.vbmeta.hash_alg",
                                    "sha256") ||
             !cmdline_append_uint64_base10(slot_data, "androidboot.vbmeta.size",
-                                          slot_data->vbmeta_size) ||
+                                          total_size) ||
             !cmdline_append_hex(slot_data, "androidboot.vbmeta.digest",
                                 avb_sha256_final(&ctx),
                                 AVB_SHA256_DIGEST_SIZE)) {
@@ -867,12 +895,18 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       case AVB_ALGORITHM_TYPE_SHA512_RSA4096:
       case AVB_ALGORITHM_TYPE_SHA512_RSA8192: {
         AvbSHA512Ctx ctx;
+        size_t n, total_size = 0;
+        ;
         avb_sha512_init(&ctx);
-        avb_sha512_update(&ctx, slot_data->vbmeta_data, slot_data->vbmeta_size);
+        for (n = 0; n < slot_data->num_vbmeta_images; n++) {
+          avb_sha512_update(&ctx, slot_data->vbmeta_images[n].vbmeta_data,
+                            slot_data->vbmeta_images[n].vbmeta_size);
+          total_size += slot_data->vbmeta_images[n].vbmeta_size;
+        }
         if (!cmdline_append_option(slot_data, "androidboot.vbmeta.hash_alg",
                                    "sha512") ||
             !cmdline_append_uint64_base10(slot_data, "androidboot.vbmeta.size",
-                                          slot_data->vbmeta_size) ||
+                                          total_size) ||
             !cmdline_append_hex(slot_data, "androidboot.vbmeta.digest",
                                 avb_sha512_final(&ctx),
                                 AVB_SHA512_DIGEST_SIZE)) {
@@ -909,11 +943,21 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data) {
   if (data->ab_suffix != NULL) {
     avb_free(data->ab_suffix);
   }
-  if (data->vbmeta_data != NULL) {
-    avb_free(data->vbmeta_data);
-  }
   if (data->cmdline != NULL) {
     avb_free(data->cmdline);
+  }
+  if (data->vbmeta_images != NULL) {
+    size_t n;
+    for (n = 0; n < data->num_vbmeta_images; n++) {
+      AvbVBMetaData* vbmeta_image = &data->vbmeta_images[n];
+      if (vbmeta_image->partition_name != NULL) {
+        avb_free(vbmeta_image->partition_name);
+      }
+      if (vbmeta_image->vbmeta_data != NULL) {
+        avb_free(vbmeta_image->vbmeta_data);
+      }
+    }
+    avb_free(data->vbmeta_images);
   }
   if (data->loaded_partitions != NULL) {
     size_t n;
