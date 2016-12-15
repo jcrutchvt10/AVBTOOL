@@ -621,7 +621,7 @@ out:
   return ret;
 }
 
-#define NUM_GUIDS 2
+#define NUM_GUIDS 3
 
 /* Substitutes all variables (e.g. $(ANDROID_SYSTEM_PARTUUID)) with
  * values. Returns NULL on OOM, otherwise the cmdline with values
@@ -629,9 +629,10 @@ out:
  */
 static char* sub_cmdline(AvbOps* ops, const char* cmdline,
                          const char* ab_suffix) {
-  const char* part_name_str[NUM_GUIDS] = {"system", "boot"};
+  const char* part_name_str[NUM_GUIDS] = {"system", "boot", "vbmeta"};
   const char* replace_str[NUM_GUIDS] = {"$(ANDROID_SYSTEM_PARTUUID)",
-                                        "$(ANDROID_BOOT_PARTUUID)"};
+                                        "$(ANDROID_BOOT_PARTUUID)",
+                                        "$(ANDROID_VBMETA_PARTUUID)"};
   char* ret = NULL;
   AvbIOResult io_ret;
 
