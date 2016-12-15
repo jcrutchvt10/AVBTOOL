@@ -247,16 +247,6 @@ static bool collect_descriptors(const AvbDescriptor* descriptor,
   return true;  // Keep iterating.
 }
 
-static std::string mem_to_hexstring(const uint8_t* data, size_t len) {
-  std::string ret;
-  char digits[17] = "0123456789abcdef";
-  for (size_t n = 0; n < len; n++) {
-    ret.push_back(digits[data[n] >> 4]);
-    ret.push_back(digits[data[n] & 0x0f]);
-  }
-  return ret;
-}
-
 void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   const size_t rootfs_size = 1028 * 1024;
   const size_t partition_size = 1536 * 1024;
