@@ -1111,4 +1111,32 @@ TEST_F(AvbToolTest, ChainedPartition) {
                                  d.public_key_len));
 }
 
+TEST_F(AvbToolTest, SigningHelperBasic) {
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta.bin");
+  base::FilePath signing_helper_test_path = testdir_.Append("signing_helper_test");
+  EXPECT_COMMAND(
+      0,
+      "SIGNING_HELPER_TEST=\"%s\" ./avbtool make_vbmeta_image "
+      "--output %s "
+      "--algorithm SHA256_RSA2048 --key test/data/testkey_rsa2048.pem "
+      "--signing_helper test/avbtool_signing_helper_test.py",
+      signing_helper_test_path.value().c_str(), vbmeta_path.value().c_str());
+
+  // Now check the value in test file.
+  std::string value;
+  ASSERT_TRUE(base::ReadFileToString(signing_helper_test_path, &value));
+  EXPECT_EQ("DONE", value);
+}
+
+TEST_F(AvbToolTest, SigningHelperReturnError) {
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta.bin");
+  EXPECT_COMMAND(
+      1,
+      "./avbtool make_vbmeta_image "
+      "--output %s "
+      "--algorithm SHA256_RSA2048 --key test/data/testkey_rsa2048.pem "
+      "--signing_helper test/avbtool_signing_helper_test.py",
+      vbmeta_path.value().c_str());
+}
+
 }  // namespace avb
