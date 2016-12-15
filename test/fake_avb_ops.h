@@ -83,10 +83,10 @@ class FakeAvbOps {
                                          size_t public_key_metadata_length,
                                          bool* out_key_is_trusted);
 
-  AvbIOResult read_rollback_index(AvbOps* ops, size_t rollback_index_slot,
+  AvbIOResult read_rollback_index(AvbOps* ops, size_t rollback_index_location,
                                   uint64_t* out_rollback_index);
 
-  AvbIOResult write_rollback_index(AvbOps* ops, size_t rollback_index_slot,
+  AvbIOResult write_rollback_index(AvbOps* ops, size_t rollback_index_location,
                                    uint64_t rollback_index);
 
   AvbIOResult read_is_device_unlocked(AvbOps* ops,

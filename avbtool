@@ -1289,7 +1289,7 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
   See the |AvbChainPartitionDescriptor| C struct for more information.
 
   Attributes:
-    rollback_index_slot: The rollback index slot to use.
+    rollback_index_location: The rollback index location to use.
     partition_name: Partition name.
     public_key: Bytes for the public key.
   """
@@ -1298,7 +1298,7 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
   RESERVED = 64
   SIZE = 28 + RESERVED
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
-                   'L'  # rollback_index_slot
+                   'L'  # rollback_index_location
                    'L'  # partition_name_size (bytes)
                    'L' +  # public_key_size (bytes)
                    str(RESERVED) + 's')  # reserved
@@ -1316,7 +1316,8 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
     assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
 
     if data:
-      (tag, num_bytes_following, self.rollback_index_slot, partition_name_len,
+      (tag, num_bytes_following, self.rollback_index_location,
+       partition_name_len,
        public_key_len, _) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
       expected_size = round_to_multiple(
           self.SIZE - 16 + partition_name_len + public_key_len, 8)
@@ -1332,7 +1333,7 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
       self.public_key = data[(self.SIZE + o):(self.SIZE + o + public_key_len)]
 
     else:
-      self.rollback_index_slot = 0
+      self.rollback_index_location = 0
       self.partition_name = ''
       self.public_key = bytearray()
 
@@ -1343,12 +1344,12 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
       o: The object to write the output to.
     """
     o.write('    Chain Partition descriptor:\n')
-    o.write('      Partition Name:        {}\n'.format(self.partition_name))
-    o.write('      Rollback Index Slot:   {}\n'.format(
-        self.rollback_index_slot))
+    o.write('      Partition Name:          {}\n'.format(self.partition_name))
+    o.write('      Rollback Index Location: {}\n'.format(
+        self.rollback_index_location))
     # Just show the SHA1 of the key, for size reasons.
     hexdig = hashlib.sha1(self.public_key).hexdigest()
-    o.write('      Public key (sha1):     {}\n'.format(hexdig))
+    o.write('      Public key (sha1):       {}\n'.format(hexdig))
 
   def encode(self):
     """Serializes the descriptor.
@@ -1362,7 +1363,7 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
     nbf_with_padding = round_to_multiple(num_bytes_following, 8)
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
-                       self.rollback_index_slot, len(encoded_name),
+                       self.rollback_index_location, len(encoded_name),
                        len(self.public_key), self.RESERVED*'\0')
     padding = struct.pack(str(padding_size) + 'x')
     ret = desc + encoded_name + self.public_key + padding
@@ -1843,9 +1844,9 @@ class Avb(object):
           raise AvbError('Malformed chained partition "{}".'.format(cp))
         desc = AvbChainPartitionDescriptor()
         desc.partition_name = cp_tokens[0]
-        desc.rollback_index_slot = int(cp_tokens[1])
-        if desc.rollback_index_slot < 1:
-          raise AvbError('Rollback index slot must be 1 or larger.')
+        desc.rollback_index_location = int(cp_tokens[1])
+        if desc.rollback_index_location < 1:
+          raise AvbError('Rollback index location must be 1 or larger.')
         file_path = cp_tokens[2]
         desc.public_key = open(file_path, 'rb').read()
         descriptors.append(desc)

@@ -282,7 +282,7 @@ TEST(UtilTest, ChainPartitionDescriptorByteswap) {
   nbf = 36 + sizeof(AvbChainPartitionDescriptor) - sizeof(AvbDescriptor);
   h.parent_descriptor.num_bytes_following = htobe64(nbf);
   h.parent_descriptor.tag = htobe64(AVB_DESCRIPTOR_TAG_CHAIN_PARTITION);
-  h.rollback_index_slot = htobe32(42);
+  h.rollback_index_location = htobe32(42);
   h.partition_name_len = htobe32(16);
   h.public_key_len = htobe32(17);
 
@@ -290,7 +290,7 @@ TEST(UtilTest, ChainPartitionDescriptorByteswap) {
 
   EXPECT_EQ(AVB_DESCRIPTOR_TAG_CHAIN_PARTITION, s.parent_descriptor.tag);
   EXPECT_EQ(nbf, s.parent_descriptor.num_bytes_following);
-  EXPECT_EQ(42UL, s.rollback_index_slot);
+  EXPECT_EQ(42UL, s.rollback_index_location);
   EXPECT_EQ(16UL, s.partition_name_len);
   EXPECT_EQ(17UL, s.public_key_len);
 
@@ -301,7 +301,7 @@ TEST(UtilTest, ChainPartitionDescriptorByteswap) {
 
   // Check for bad rollback index slot (must be at least 1).
   bad = h;
-  bad.rollback_index_slot = htobe32(0);
+  bad.rollback_index_location = htobe32(0);
   EXPECT_EQ(0, avb_chain_partition_descriptor_validate_and_byteswap(&bad, &s));
 
   // Doesn't fit in 40 bytes (24 + 17 = 41).
