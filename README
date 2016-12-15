@@ -186,7 +186,7 @@ The content for the vbmeta partition can be generated as follows:
      [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]    \
      [--include_descriptors_from_footer /path/to/image.bin]                 \
      [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]          \
-     [--chain_partition part_name:rollback_index_slot:/path/to/key1.bin]
+     [--chain_partition part_name:rollback_index_location:/path/to/key1.bin]
 
 An integrity footer containing the hash for an entire partition can be
 added to an existing image as follows:

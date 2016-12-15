@@ -145,26 +145,26 @@ AvbIOResult FakeAvbOps::validate_vbmeta_public_key(
 }
 
 AvbIOResult FakeAvbOps::read_rollback_index(AvbOps* ops,
-                                            size_t rollback_index_slot,
+                                            size_t rollback_index_location,
                                             uint64_t* out_rollback_index) {
-  if (rollback_index_slot >= stored_rollback_indexes_.size()) {
-    fprintf(stderr, "No rollback index for slot %zd (has %zd slots).\n",
-            rollback_index_slot, stored_rollback_indexes_.size());
+  if (rollback_index_location >= stored_rollback_indexes_.size()) {
+    fprintf(stderr, "No rollback index for location %zd (has %zd locations).\n",
+            rollback_index_location, stored_rollback_indexes_.size());
     return AVB_IO_RESULT_ERROR_IO;
   }
-  *out_rollback_index = stored_rollback_indexes_[rollback_index_slot];
+  *out_rollback_index = stored_rollback_indexes_[rollback_index_location];
   return AVB_IO_RESULT_OK;
 }
 
 AvbIOResult FakeAvbOps::write_rollback_index(AvbOps* ops,
-                                             size_t rollback_index_slot,
+                                             size_t rollback_index_location,
                                              uint64_t rollback_index) {
-  if (rollback_index_slot >= stored_rollback_indexes_.size()) {
-    fprintf(stderr, "No rollback index for slot %zd (has %zd slots).\n",
-            rollback_index_slot, stored_rollback_indexes_.size());
+  if (rollback_index_location >= stored_rollback_indexes_.size()) {
+    fprintf(stderr, "No rollback index for location %zd (has %zd locations).\n",
+            rollback_index_location, stored_rollback_indexes_.size());
     return AVB_IO_RESULT_ERROR_IO;
   }
-  stored_rollback_indexes_[rollback_index_slot] = rollback_index;
+  stored_rollback_indexes_[rollback_index_location] = rollback_index;
   return AVB_IO_RESULT_OK;
 }
 
@@ -218,18 +218,19 @@ static AvbIOResult my_ops_validate_vbmeta_public_key(
 }
 
 static AvbIOResult my_ops_read_rollback_index(AvbOps* ops,
-                                              size_t rollback_index_slot,
+                                              size_t rollback_index_location,
                                               uint64_t* out_rollback_index) {
   return ((FakeAvbOpsC*)ops)
-      ->my_ops->read_rollback_index(ops, rollback_index_slot,
+      ->my_ops->read_rollback_index(ops, rollback_index_location,
                                     out_rollback_index);
 }
 
 static AvbIOResult my_ops_write_rollback_index(AvbOps* ops,
-                                               size_t rollback_index_slot,
+                                               size_t rollback_index_location,
                                                uint64_t rollback_index) {
   return ((FakeAvbOpsC*)ops)
-      ->my_ops->write_rollback_index(ops, rollback_index_slot, rollback_index);
+      ->my_ops->write_rollback_index(ops, rollback_index_location,
+                                     rollback_index);
 }
 
 static AvbIOResult my_ops_read_is_device_unlocked(

@@ -198,7 +198,7 @@ fail:
 static AvbSlotVerifyResult load_and_verify_vbmeta(
     AvbOps* ops, const char* const* requested_partitions, const char* ab_suffix,
     bool allow_verification_error, AvbVBMetaImageFlags toplevel_vbmeta_flags,
-    int rollback_index_slot, const char* partition_name,
+    int rollback_index_location, const char* partition_name,
     size_t partition_name_len, const uint8_t* expected_public_key,
     size_t expected_public_key_length, AvbSlotVerifyData* slot_data,
     AvbAlgorithmType* out_algorithm_type) {
@@ -404,14 +404,14 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
   }
 
   /* Check rollback index. */
-  io_ret = ops->read_rollback_index(ops, rollback_index_slot,
+  io_ret = ops->read_rollback_index(ops, rollback_index_location,
                                     &stored_rollback_index);
   if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
     goto out;
   } else if (io_ret != AVB_IO_RESULT_OK) {
     avb_errorv(full_partition_name,
-               ": Error getting rollback index for slot.\n", NULL);
+               ": Error getting rollback index for location.\n", NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
     goto out;
   }
@@ -517,7 +517,7 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
 
         sub_ret = load_and_verify_vbmeta(
             ops, requested_partitions, ab_suffix, allow_verification_error,
-            toplevel_vbmeta_flags, chain_desc.rollback_index_slot,
+            toplevel_vbmeta_flags, chain_desc.rollback_index_location,
             (const char*)chain_partition_name, chain_desc.partition_name_len,
             chain_public_key, chain_desc.public_key_len, slot_data,
             NULL /* out_algorithm_type */);
@@ -610,13 +610,14 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     }
   }
 
-  if (rollback_index_slot >= AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS) {
-    avb_errorv(full_partition_name, ": Invalid rollback_index_slot.\n", NULL);
+  if (rollback_index_location >= AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS) {
+    avb_errorv(full_partition_name, ": Invalid rollback_index_location.\n",
+               NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
     goto out;
   }
 
-  slot_data->rollback_indexes[rollback_index_slot] =
+  slot_data->rollback_indexes[rollback_index_location] =
       vbmeta_header.rollback_index;
 
   if (out_algorithm_type != NULL) {
@@ -809,7 +810,7 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
   ret = load_and_verify_vbmeta(
       ops, requested_partitions, ab_suffix, allow_verification_error,
       0, /* toplevel_vbmeta_flags */
-      0 /* rollback_index_slot */, "vbmeta", avb_strlen("vbmeta"),
+      0 /* rollback_index_location */, "vbmeta", avb_strlen("vbmeta"),
       NULL /* expected_public_key */, 0 /* expected_public_key_length */,
       slot_data, &algorithm_type);
   if (!allow_verification_error && ret != AVB_SLOT_VERIFY_RESULT_OK) {
