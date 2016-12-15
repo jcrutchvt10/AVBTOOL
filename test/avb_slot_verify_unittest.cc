@@ -928,7 +928,7 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
           "VBMeta image version:     1.0\n"
           "Header Block:             256 bytes\n"
           "Authentication Block:     576 bytes\n"
-          "Auxiliary Block:          896 bytes\n"
+          "Auxiliary Block:          960 bytes\n"
           "Algorithm:                SHA256_RSA2048\n"
           "Rollback Index:           4\n"
           "Flags:                    %d\n"
@@ -939,7 +939,8 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
           "1 PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
           "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) 4096 4096 257 257 sha1 "
           "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 1 "
-          "ignore_zero_blocks\" root=0xfd00'\n"
+          "ignore_zero_blocks\" root=0xfd00 "
+          "androidboot.vbmeta.device=PARTUUID=$(ANDROID_VBMETA_PARTUUID)'\n"
           "    Kernel Cmdline descriptor:\n"
           "      Flags:                 2\n"
           "      Kernel Cmdline:        "
@@ -968,19 +969,21 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
         "PARTUUID=1234-fake-guid-for:system_a "
         "PARTUUID=1234-fake-guid-for:system_a 4096 4096 257 257 sha1 "
         "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 1 "
-        "ignore_zero_blocks\" root=0xfd00 should_be_in_both=1 "
-        "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
-        "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1728 "
+        "ignore_zero_blocks\" root=0xfd00 "
+        "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
+        "should_be_in_both=1 androidboot.slot_suffix=_a "
+        "androidboot.vbmeta.device_state=locked "
+        "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1792 "
         "androidboot.vbmeta.digest="
-        "c8b413fa7302417b9fe26319b8ef4867d30010e6105e043620ed94db5db7891f",
+        "597b8c9dafbd0e01952e23b72dd805269a46302000582f6ebc5ebbb998378871",
         std::string(slot_data->cmdline));
   } else {
     EXPECT_EQ(
         "root=PARTUUID=1234-fake-guid-for:system_a should_be_in_both=1 "
         "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
-        "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1728 "
+        "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1792 "
         "androidboot.vbmeta.digest="
-        "94af92ac6dc4fa86b9f93c182b3149c2aebe5b26f1c41fd61905082ff2f750c6",
+        "b574b9765f17fc98a90dda0f1e277bacbbd5f01c1e9a3c9a507252085df8a580",
         std::string(slot_data->cmdline));
   }
   avb_slot_verify_data_free(slot_data);

@@ -1791,6 +1791,7 @@ class Avb(object):
       c += ' 1'  # number of optional args
       c += ' ignore_zero_blocks'
     c += '" root=0xfd00'
+    c += ' androidboot.vbmeta.device=PARTUUID=$(ANDROID_VBMETA_PARTUUID)'
 
     # Now that we have the command-line, generate the descriptor.
     desc = AvbKernelCmdlineDescriptor()
