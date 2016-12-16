@@ -185,7 +185,7 @@ TEST_F(AvbSlotVerifyTest, CorruptedImage) {
   EXPECT_EQ(AVB_IO_RESULT_OK,
             ops_.avb_ops()->write_to_partition(
                 ops_.avb_ops(), "vbmeta_a",
-                -sizeof corrupt_data,  // offset from end
+                -4,  // offset from end
                 sizeof corrupt_data, corrupt_data));
 
   AvbSlotVerifyData* slot_data = NULL;
