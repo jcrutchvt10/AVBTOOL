@@ -31,6 +31,8 @@
 #include "avb_unittest_util.h"
 #include "fake_avb_ops.h"
 
+namespace avb {
+
 class AvbSlotVerifyTest : public BaseAvbToolTest {
  public:
   AvbSlotVerifyTest() {}
@@ -38,7 +40,7 @@ class AvbSlotVerifyTest : public BaseAvbToolTest {
   virtual void SetUp() override {
     BaseAvbToolTest::SetUp();
     ops_.set_partition_dir(testdir_);
-    ops_.set_stored_rollback_indexes({0, 0, 0, 0});
+    ops_.set_stored_rollback_indexes({{0, 0}, {1, 0}, {2, 0}, {3, 0}});
     ops_.set_stored_is_device_unlocked(false);
   }
 
@@ -237,7 +239,7 @@ TEST_F(AvbSlotVerifyTest, RollbackIndex) {
 
   // First try with 42 as the stored rollback index - this should
   // succeed since the image rollback index is 42 (as set above).
-  ops_.set_stored_rollback_indexes({42});
+  ops_.set_stored_rollback_indexes({{0, 42}});
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
             avb_slot_verify(ops_.avb_ops(), requested_partitions, "_a",
                             false /* allow_verification_error */, &slot_data));
@@ -246,7 +248,7 @@ TEST_F(AvbSlotVerifyTest, RollbackIndex) {
 
   // Then try with 43 for the stored rollback index - this should fail
   // because the image has rollback index 42 which is less than 43.
-  ops_.set_stored_rollback_indexes({43});
+  ops_.set_stored_rollback_indexes({{0, 43}});
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX,
             avb_slot_verify(ops_.avb_ops(), requested_partitions, "_a",
                             false /* allow_verification_error */, &slot_data));
@@ -713,7 +715,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionRollbackIndexFail) {
 
   // Both images (vbmeta_a and boot_a) have rollback index 10 and 11
   // so it should work if the stored rollback indexes are 0 and 0.
-  ops_.set_stored_rollback_indexes({0, 0});
+  ops_.set_stored_rollback_indexes({{0, 0}, {1, 0}});
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
             avb_slot_verify(ops_.avb_ops(), requested_partitions, "_a",
                             false /* allow_verification_error */, &slot_data));
@@ -723,7 +725,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionRollbackIndexFail) {
   // Check failure if we set the stored rollback index of the chained
   // partition to 20 (see AvbSlotVerifyTest.RollbackIndex above
   // where we test rollback index checks for the vbmeta partition).
-  ops_.set_stored_rollback_indexes({0, 20});
+  ops_.set_stored_rollback_indexes({{0, 0}, {1, 20}});
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX,
             avb_slot_verify(ops_.avb_ops(), requested_partitions, "_a",
                             false /* allow_verification_error */, &slot_data));
@@ -737,7 +739,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionRollbackIndexFail) {
   // Check failure if there is no rollback index slot 1 - in that case
   // we expect an I/O error since ops->read_rollback_index() will
   // fail.
-  ops_.set_stored_rollback_indexes({0});
+  ops_.set_stored_rollback_indexes({{0, 0}});
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_IO,
             avb_slot_verify(ops_.avb_ops(), requested_partitions, "_a",
                             false /* allow_verification_error */, &slot_data));
@@ -1074,3 +1076,5 @@ TEST_F(AvbSlotVerifyTest, CmdlineWithHashtreeVerificationOff) {
 TEST_F(AvbSlotVerifyTest, CmdlineWithHashtreeVerificationOn) {
   CmdlineWithHashtreeVerification(true);
 }
+
+}  // namespace avb

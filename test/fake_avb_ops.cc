@@ -40,6 +40,8 @@
 
 #include "fake_avb_ops.h"
 
+namespace avb {
+
 AvbIOResult FakeAvbOps::read_from_partition(const char* partition,
                                             int64_t offset, size_t num_bytes,
                                             void* buffer,
@@ -147,7 +149,7 @@ AvbIOResult FakeAvbOps::validate_vbmeta_public_key(
 AvbIOResult FakeAvbOps::read_rollback_index(AvbOps* ops,
                                             size_t rollback_index_location,
                                             uint64_t* out_rollback_index) {
-  if (rollback_index_location >= stored_rollback_indexes_.size()) {
+  if (stored_rollback_indexes_.count(rollback_index_location) == 0) {
     fprintf(stderr, "No rollback index for location %zd (has %zd locations).\n",
             rollback_index_location, stored_rollback_indexes_.size());
     return AVB_IO_RESULT_ERROR_IO;
@@ -159,7 +161,7 @@ AvbIOResult FakeAvbOps::read_rollback_index(AvbOps* ops,
 AvbIOResult FakeAvbOps::write_rollback_index(AvbOps* ops,
                                              size_t rollback_index_location,
                                              uint64_t rollback_index) {
-  if (rollback_index_location >= stored_rollback_indexes_.size()) {
+  if (stored_rollback_indexes_.count(rollback_index_location) == 0) {
     fprintf(stderr, "No rollback index for location %zd (has %zd locations).\n",
             rollback_index_location, stored_rollback_indexes_.size());
     return AVB_IO_RESULT_ERROR_IO;
@@ -185,84 +187,103 @@ AvbIOResult FakeAvbOps::get_unique_guid_for_partition(AvbOps* ops,
   return AVB_IO_RESULT_OK;
 }
 
-struct FakeAvbOpsC {
-  AvbABOps parent;
-  FakeAvbOps* my_ops;
-};
-
 static AvbIOResult my_ops_read_from_partition(AvbOps* ops,
                                               const char* partition,
-                                              int64_t offset, size_t num_bytes,
+                                              int64_t offset,
+                                              size_t num_bytes,
                                               void* buffer,
                                               size_t* out_num_read) {
-  return ((FakeAvbOpsC*)ops)
-      ->my_ops->read_from_partition(partition, offset, num_bytes, buffer,
-                                    out_num_read);
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->read_from_partition(partition, offset, num_bytes, buffer, out_num_read);
 }
 
-static AvbIOResult my_ops_write_to_partition(AvbOps* ops, const char* partition,
-                                             int64_t offset, size_t num_bytes,
+static AvbIOResult my_ops_write_to_partition(AvbOps* ops,
+                                             const char* partition,
+                                             int64_t offset,
+                                             size_t num_bytes,
                                              const void* buffer) {
-  return ((FakeAvbOpsC*)ops)
-      ->my_ops->write_to_partition(partition, offset, num_bytes, buffer);
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->write_to_partition(partition, offset, num_bytes, buffer);
 }
 
 static AvbIOResult my_ops_validate_vbmeta_public_key(
-    AvbOps* ops, const uint8_t* public_key_data, size_t public_key_length,
-    const uint8_t* public_key_metadata, size_t public_key_metadata_length,
+    AvbOps* ops,
+    const uint8_t* public_key_data,
+    size_t public_key_length,
+    const uint8_t* public_key_metadata,
+    size_t public_key_metadata_length,
     bool* out_key_is_trusted) {
-  return ((FakeAvbOpsC*)ops)
-      ->my_ops->validate_vbmeta_public_key(
-          ops, public_key_data, public_key_length, public_key_metadata,
-          public_key_metadata_length, out_key_is_trusted);
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->validate_vbmeta_public_key(ops,
+                                   public_key_data,
+                                   public_key_length,
+                                   public_key_metadata,
+                                   public_key_metadata_length,
+                                   out_key_is_trusted);
 }
 
 static AvbIOResult my_ops_read_rollback_index(AvbOps* ops,
                                               size_t rollback_index_location,
                                               uint64_t* out_rollback_index) {
-  return ((FakeAvbOpsC*)ops)
-      ->my_ops->read_rollback_index(ops, rollback_index_location,
-                                    out_rollback_index);
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->read_rollback_index(ops, rollback_index_location, out_rollback_index);
 }
 
 static AvbIOResult my_ops_write_rollback_index(AvbOps* ops,
                                                size_t rollback_index_location,
                                                uint64_t rollback_index) {
-  return ((FakeAvbOpsC*)ops)
-      ->my_ops->write_rollback_index(ops, rollback_index_location,
-                                     rollback_index);
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->write_rollback_index(ops, rollback_index_location, rollback_index);
 }
 
 static AvbIOResult my_ops_read_is_device_unlocked(
     AvbOps* ops, bool* out_is_device_unlocked) {
-  return ((FakeAvbOpsC*)ops)
-      ->my_ops->read_is_device_unlocked(ops, out_is_device_unlocked);
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->read_is_device_unlocked(ops, out_is_device_unlocked);
 }
 
 static AvbIOResult my_ops_get_unique_guid_for_partition(AvbOps* ops,
                                                         const char* partition,
                                                         char* guid_buf,
                                                         size_t guid_buf_size) {
-  return ((FakeAvbOpsC*)ops)
-      ->my_ops->get_unique_guid_for_partition(ops, partition, guid_buf,
-                                              guid_buf_size);
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->get_unique_guid_for_partition(ops, partition, guid_buf, guid_buf_size);
 }
 
 FakeAvbOps::FakeAvbOps() {
-  avb_ops_ = new FakeAvbOpsC;
-  avb_ops_->parent.ops.read_from_partition = my_ops_read_from_partition;
-  avb_ops_->parent.ops.write_to_partition = my_ops_write_to_partition;
-  avb_ops_->parent.ops.validate_vbmeta_public_key =
+  if (!instance_map_) {
+    instance_map_ = new std::map<AvbOps*, FakeAvbOps*>;
+  }
+  (*instance_map_)[&avb_ops_] = this;
+  (*instance_map_)[&avb_ab_ops_.ops] = this;
+
+  avb_ops_.read_from_partition = my_ops_read_from_partition;
+  avb_ops_.write_to_partition = my_ops_write_to_partition;
+  avb_ops_.validate_vbmeta_public_key =
       my_ops_validate_vbmeta_public_key;
-  avb_ops_->parent.ops.read_rollback_index = my_ops_read_rollback_index;
-  avb_ops_->parent.ops.write_rollback_index = my_ops_write_rollback_index;
-  avb_ops_->parent.ops.read_is_device_unlocked = my_ops_read_is_device_unlocked;
-  avb_ops_->parent.ops.get_unique_guid_for_partition =
+  avb_ops_.read_rollback_index = my_ops_read_rollback_index;
+  avb_ops_.write_rollback_index = my_ops_write_rollback_index;
+  avb_ops_.read_is_device_unlocked = my_ops_read_is_device_unlocked;
+  avb_ops_.get_unique_guid_for_partition =
       my_ops_get_unique_guid_for_partition;
+
   // Just use the built-in A/B metadata read/write routines.
-  avb_ops_->parent.read_ab_metadata = avb_ab_data_read;
-  avb_ops_->parent.write_ab_metadata = avb_ab_data_write;
-  avb_ops_->my_ops = this;
+  avb_ab_ops_.ops = avb_ops_;
+  avb_ab_ops_.read_ab_metadata = avb_ab_data_read;
+  avb_ab_ops_.write_ab_metadata = avb_ab_data_write;
+
+  delegate_ = this;
 }
 
-FakeAvbOps::~FakeAvbOps() { delete avb_ops_; }
+FakeAvbOps::~FakeAvbOps() {}
+
+std::map<AvbOps*, FakeAvbOps*>* FakeAvbOps::instance_map_ = nullptr;
+
+}  // namespace avb

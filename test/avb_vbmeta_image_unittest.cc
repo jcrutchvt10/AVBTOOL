@@ -36,6 +36,8 @@
 
 #include "avb_unittest_util.h"
 
+namespace avb {
+
 class VerifyTest : public BaseAvbToolTest {
  public:
   VerifyTest() {}
@@ -519,3 +521,5 @@ TEST_F(VerifyTest, VBMetaHeaderByteswap) {
   static_assert(offsetof(AvbVBMetaImageHeader, reserved) == 124,
                 "Remember to unittest byteswapping of newly added fields");
 }
+
+}  // namespace avb
