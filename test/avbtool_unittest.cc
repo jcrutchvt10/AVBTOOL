@@ -38,6 +38,8 @@
 
 #include "avb_unittest_util.h"
 
+namespace avb {
+
 class AvbToolTest : public BaseAvbToolTest {
  public:
   AvbToolTest() {}
@@ -1108,3 +1110,5 @@ TEST_F(AvbToolTest, ChainedPartition) {
                                      sizeof(AvbChainPartitionDescriptor) + o,
                                  d.public_key_len));
 }
+
+}  // namespace avb

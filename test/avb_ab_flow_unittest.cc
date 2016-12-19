@@ -24,12 +24,17 @@
 
 #include <string.h>
 
+#include <map>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include <libavb_ab/libavb_ab.h>
 
 #include "avb_unittest_util.h"
 #include "fake_avb_ops.h"
+
+namespace avb {
 
 static_assert(sizeof(AvbABSlotData) == 4, "AvbABSlotData has wrong size");
 static_assert(sizeof(AvbABData) == AVB_AB_DATA_SIZE,
@@ -121,7 +126,7 @@ class AvbABFlowTest : public BaseAvbToolTest {
   virtual void SetUp() override {
     BaseAvbToolTest::SetUp();
     ops_.set_partition_dir(testdir_);
-    ops_.set_stored_rollback_indexes({0, 0, 0, 0});
+    ops_.set_stored_rollback_indexes({{0, 0}, {1, 0}, {2, 0}, {3, 0}});
     ops_.set_stored_is_device_unlocked(false);
 
     // Create large enough 'misc' partition and initialize it with
@@ -213,7 +218,7 @@ class AvbABFlowTest : public BaseAvbToolTest {
              uint64_t a_rollback_odm, int b_pri, int b_tries, bool b_success,
              SlotValidity b_slot_validity, uint64_t b_rollback_boot,
              uint64_t b_rollback_odm,
-             const std::vector<uint64_t>& stored_rollback_indexes) {
+             const std::map<size_t, uint64_t>& stored_rollback_indexes) {
     AvbABData data;
     avb_ab_data_init(&data);
     data.slots[0].priority = a_pri;
@@ -227,6 +232,11 @@ class AvbABFlowTest : public BaseAvbToolTest {
     GenerateSlot(0, a_slot_validity, a_rollback_boot, a_rollback_odm);
     GenerateSlot(1, b_slot_validity, b_rollback_boot, b_rollback_odm);
     ops_.set_stored_rollback_indexes(stored_rollback_indexes);
+  }
+
+  std::map<size_t, uint64_t> MakeRollbackIndexes(uint64_t slot_0_value,
+                                                 uint64_t slot_1_value) {
+    return std::map<size_t, uint64_t>{{0, slot_0_value}, {1, slot_1_value}};
   }
 
   FakeAvbOps ops_;
@@ -244,8 +254,7 @@ class AvbABFlowTest : public BaseAvbToolTest {
     EXPECT_EQ(b_pri, data.slots[1].priority);                                 \
     EXPECT_EQ(b_tries, data.slots[1].tries_remaining);                        \
     EXPECT_EQ(b_success ? 1 : 0, data.slots[1].successful_boot);              \
-    EXPECT_EQ(std::vector<uint64_t>(stored_rollback_indexes),                 \
-              ops_.get_stored_rollback_indexes());                            \
+    EXPECT_EQ(stored_rollback_indexes, ops_.get_stored_rollback_indexes());   \
   } while (0);
 
 TEST_F(AvbABFlowTest, MetadataReadAndWrite) {
@@ -279,13 +288,13 @@ TEST_F(AvbABFlowTest, EverythingIsValid) {
 
   SetMD(14, 0, 1, SV_OK, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         15, 0, 1, SV_OK, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(14, 0, 1,                        // A: pri, tries, successful
         15, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -293,13 +302,13 @@ TEST_F(AvbABFlowTest, EverythingIsValid) {
   // Also check the other slot.
   SetMD(15, 0, 1, SV_OK, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -311,13 +320,13 @@ TEST_F(AvbABFlowTest, NoBootableSlots) {
 
   SetMD(0, 0, 0, SV_OK, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         0, 0, 0, SV_OK, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});               // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_EQ(nullptr, data);
 }
 
@@ -327,14 +336,14 @@ TEST_F(AvbABFlowTest, TriesRemainingDecreasing) {
 
   SetMD(15, 3, 0, SV_OK, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         0, 0, 0, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
 
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 2, 0,                        // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -345,7 +354,7 @@ TEST_F(AvbABFlowTest, TriesRemainingDecreasing) {
                         false /* allow_verification_error */, &data));
   ExpMD(15, 1, 0,                        // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -356,7 +365,7 @@ TEST_F(AvbABFlowTest, TriesRemainingDecreasing) {
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 0,                        // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -368,7 +377,7 @@ TEST_F(AvbABFlowTest, TriesRemainingDecreasing) {
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_EQ(nullptr, data);
 }
 
@@ -378,13 +387,13 @@ TEST_F(AvbABFlowTest, TryingThenFallback) {
 
   SetMD(15, 2, 0, SV_OK, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 1, 0,                        // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -395,7 +404,7 @@ TEST_F(AvbABFlowTest, TryingThenFallback) {
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 0,                        // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -406,7 +415,7 @@ TEST_F(AvbABFlowTest, TryingThenFallback) {
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -418,13 +427,13 @@ TEST_F(AvbABFlowTest, TriesRemainingNotDecreasingIfNotPriority) {
 
   SetMD(15, 0, 1, SV_OK, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 7, 0, SV_OK, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         14, 7, 0,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -437,13 +446,13 @@ TEST_F(AvbABFlowTest, InvalidSlotIsMarkedAsSuch) {
   // Slot A is invalid.
   SetMD(15, 0, 1, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -451,13 +460,13 @@ TEST_F(AvbABFlowTest, InvalidSlotIsMarkedAsSuch) {
   // Slot B is invalid.
   SetMD(15, 0, 1, SV_OK, 0, 0,   // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_INV, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -465,13 +474,13 @@ TEST_F(AvbABFlowTest, InvalidSlotIsMarkedAsSuch) {
   // Both slots are invalid.
   SetMD(15, 0, 1, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_INV, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_EQ(nullptr, data);
 }
 
@@ -482,13 +491,13 @@ TEST_F(AvbABFlowTest, UnverifiedSlotIsMarkedAsSuch) {
   // Slot A fails verification.
   SetMD(15, 0, 1, SV_UNV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -496,13 +505,13 @@ TEST_F(AvbABFlowTest, UnverifiedSlotIsMarkedAsSuch) {
   // Slot B fails verification.
   SetMD(15, 0, 1, SV_OK, 0, 0,   // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_UNV, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -510,13 +519,13 @@ TEST_F(AvbABFlowTest, UnverifiedSlotIsMarkedAsSuch) {
   // Both slots fail verification.
   SetMD(15, 0, 1, SV_UNV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_UNV, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_EQ(nullptr, data);
 }
 
@@ -527,13 +536,13 @@ TEST_F(AvbABFlowTest, RollbackIndexFailures) {
   // Slot A rollback index failure for 'boot'.
   SetMD(15, 0, 1, SV_OK, 0, 2,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 2, 2,  // B: pri, tries, success, slot_validity, RIs
-        {2, 2});                // stored_rollback_indexes
+        MakeRollbackIndexes(2, 2));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({2, 2}));  // stored_rollback_indexes
+        MakeRollbackIndexes(2, 2));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -541,13 +550,13 @@ TEST_F(AvbABFlowTest, RollbackIndexFailures) {
   // Slot A rollback index failure for 'odm'.
   SetMD(15, 0, 1, SV_OK, 2, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 2, 2,  // B: pri, tries, success, slot_validity, RIs
-        {2, 2});                // stored_rollback_indexes
+        MakeRollbackIndexes(2, 2));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({2, 2}));  // stored_rollback_indexes
+        MakeRollbackIndexes(2, 2));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -559,13 +568,13 @@ TEST_F(AvbABFlowTest, StoredRollbackIndexBumped) {
 
   SetMD(15, 0, 1, SV_OK, 3, 3,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 3, 3,  // B: pri, tries, success, slot_validity, RIs
-        {2, 2});                // stored_rollback_indexes
+        MakeRollbackIndexes(2, 2));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({3, 3}));  // stored_rollback_indexes
+        MakeRollbackIndexes(3, 3));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -574,13 +583,13 @@ TEST_F(AvbABFlowTest, StoredRollbackIndexBumped) {
   // index values.
   SetMD(15, 0, 1, SV_OK, 4, 9,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 5, 7,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0)); // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({4, 7}));  // stored_rollback_indexes
+        MakeRollbackIndexes(4, 7));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -590,13 +599,13 @@ TEST_F(AvbABFlowTest, StoredRollbackIndexBumped) {
   // after marking it as unbootable.
   SetMD(15, 0, 1, SV_INV, 4, 9,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 5, 7,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({5, 7}));  // stored_rollback_indexes
+        MakeRollbackIndexes(5, 7));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -605,73 +614,73 @@ TEST_F(AvbABFlowTest, StoredRollbackIndexBumped) {
 TEST_F(AvbABFlowTest, MarkSlotActive) {
   SetMD(15, 0, 1, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         11, 0, 1, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_IO_RESULT_OK, avb_ab_mark_slot_active(ops_.avb_ab_ops(), 0));
   ExpMD(15, 7, 0,                        // A: pri, tries, successful
         11, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
 
   // Note how priority of slot A is altered to make room for newly
   // activated slot.
   SetMD(15, 0, 1, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_IO_RESULT_OK, avb_ab_mark_slot_active(ops_.avb_ab_ops(), 1));
   ExpMD(14, 0, 1,                        // A: pri, tries, successful
         15, 7, 0,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
 }
 
 TEST_F(AvbABFlowTest, MarkSlotUnbootable) {
   SetMD(15, 0, 1, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         11, 0, 1, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_IO_RESULT_OK,
             avb_ab_mark_slot_unbootable(ops_.avb_ab_ops(), 0));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         11, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
 
   SetMD(15, 0, 1, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_IO_RESULT_OK,
             avb_ab_mark_slot_unbootable(ops_.avb_ab_ops(), 1));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         0, 0, 0,                         // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
 }
 
 TEST_F(AvbABFlowTest, MarkSlotSuccessful) {
   SetMD(15, 5, 0, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         11, 3, 0, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_IO_RESULT_OK,
             avb_ab_mark_slot_successful(ops_.avb_ab_ops(), 0));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         11, 3, 0,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
 
   SetMD(15, 5, 0, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_IO_RESULT_OK,
             avb_ab_mark_slot_successful(ops_.avb_ab_ops(), 1));
   ExpMD(15, 5, 0,                        // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
 
   // Marking an unbootable slot (A) as successful won't work (it's a
   // programmer error to do so)... notice however that the unbootable
   // slot is normalized in the process.
   SetMD(0, 3, 2, SV_INV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_IO_RESULT_OK,
             avb_ab_mark_slot_successful(ops_.avb_ab_ops(), 0));
   ExpMD(0, 0, 0,                         // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
 }
 
 static AvbABData my_serialized_data;
@@ -703,13 +712,13 @@ TEST_F(AvbABFlowTest, OtherMetadataStorage) {
 
   SetMD(14, 0, 1, SV_OK, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         15, 0, 1, SV_OK, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(14, 0, 1,                        // A: pri, tries, successful
         15, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -717,13 +726,13 @@ TEST_F(AvbABFlowTest, OtherMetadataStorage) {
   // Also check the other slot.
   SetMD(15, 0, 1, SV_OK, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         false /* allow_verification_error */, &data));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -744,13 +753,13 @@ TEST_F(AvbABFlowTest, UnlockedUnverifiedSlot) {
 
   SetMD(14, 0, 1, SV_OK, 0, 0,   // A: pri, tries, success, slot_validity, RIs
         15, 0, 1, SV_UNV, 0, 0,  // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         true /* allow_verification_error */, &data));
   ExpMD(14, 0, 1,                        // A: pri, tries, successful
         15, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_b", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -758,13 +767,13 @@ TEST_F(AvbABFlowTest, UnlockedUnverifiedSlot) {
   // Also check the other slot.
   SetMD(15, 0, 1, SV_UNV, 0, 0,  // A: pri, tries, success, slot_validity, RIs
         14, 0, 1, SV_OK, 0, 0,   // B: pri, tries, success, slot_validity, RIs
-        {0, 0});                 // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));  // stored_rollback_indexes
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR,
             avb_ab_flow(ops_.avb_ab_ops(), requested_partitions,
                         true /* allow_verification_error */, &data));
   ExpMD(15, 0, 1,                        // A: pri, tries, successful
         14, 0, 1,                        // B: pri, tries, successful
-        std::vector<uint64_t>({0, 0}));  // stored_rollback_indexes
+        MakeRollbackIndexes(0, 0));      // stored_rollback_indexes
   ASSERT_NE(nullptr, data);
   EXPECT_EQ("_a", std::string(data->ab_suffix));
   avb_slot_verify_data_free(data);
@@ -821,3 +830,5 @@ TEST_F(AvbABFlowTest, AvbtoolMetadataGeneratorExistingFile) {
     ASSERT_EQ(uint8_t(misc_data[n]), uint8_t(n));
   }
 }
+
+}  // namespace avb
