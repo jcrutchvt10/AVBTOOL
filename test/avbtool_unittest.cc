@@ -1234,4 +1234,88 @@ TEST_F(AvbToolTest, SigningHelperReturnError) {
       vbmeta_path.value().c_str());
 }
 
+TEST_F(AvbToolTest, MakeAtxPikCertificate) {
+  base::FilePath pubkey_path = testdir_.Append("tmp_pubkey.pem");
+  EXPECT_COMMAND(
+      0,
+      "openssl pkey -pubout -in test/data/testkey_rsa2048.pem -out %s",
+      pubkey_path.value().c_str());
+
+  base::FilePath output_path = testdir_.Append("tmp_certificate.bin");
+  EXPECT_COMMAND(0,
+                 "./avbtool make_atx_certificate"
+                 " --subject test/data/small_blob.bin"
+                 " --subject_key %s"
+                 " --subject_key_version 42"
+                 " --subject_is_intermediate_authority"
+                 " --authority_key test/data/testkey_rsa4096.pem"
+                 " --output %s",
+                 pubkey_path.value().c_str(),
+                 output_path.value().c_str());
+
+  EXPECT_COMMAND(0,
+                 "diff test/data/atx_pik_certificate.bin %s",
+                 output_path.value().c_str());
+}
+
+TEST_F(AvbToolTest, MakeAtxPskCertificate) {
+  base::FilePath pubkey_path = testdir_.Append("tmp_pubkey.pem");
+  EXPECT_COMMAND(
+      0,
+      "openssl pkey -pubout -in test/data/testkey_rsa2048.pem -out %s",
+      pubkey_path.value().c_str());
+
+  base::FilePath output_path = testdir_.Append("tmp_certificate.bin");
+  EXPECT_COMMAND(0,
+                 "./avbtool make_atx_certificate"
+                 " --subject test/data/atx_product_id.bin"
+                 " --subject_key %s"
+                 " --subject_key_version 42"
+                 " --authority_key test/data/testkey_rsa2048.pem"
+                 " --output %s",
+                 pubkey_path.value().c_str(),
+                 output_path.value().c_str());
+
+  EXPECT_COMMAND(0,
+                 "diff test/data/atx_psk_certificate.bin %s",
+                 output_path.value().c_str());
+}
+
+TEST_F(AvbToolTest, MakeAtxPermanentAttributes) {
+  base::FilePath pubkey_path = testdir_.Append("tmp_pubkey.pem");
+  EXPECT_COMMAND(
+      0,
+      "openssl pkey -pubout -in test/data/testkey_rsa4096.pem -out %s",
+      pubkey_path.value().c_str());
+
+  base::FilePath output_path = testdir_.Append("tmp_attributes.bin");
+  EXPECT_COMMAND(0,
+                 "./avbtool make_atx_permanent_attributes"
+                 " --root_authority_key %s"
+                 " --product_id test/data/atx_product_id.bin"
+                 " --output %s",
+                 pubkey_path.value().c_str(),
+                 output_path.value().c_str());
+
+  EXPECT_COMMAND(0,
+                 "diff test/data/atx_permanent_attributes.bin %s",
+                 output_path.value().c_str());
+}
+
+TEST_F(AvbToolTest, MakeAtxMetadata) {
+  base::FilePath output_path = testdir_.Append("tmp_metadata.bin");
+
+  EXPECT_COMMAND(
+      0,
+      "./avbtool make_atx_metadata"
+      " --intermediate_key_certificate test/data/atx_pik_certificate.bin"
+      " --product_key_certificate test/data/atx_psk_certificate.bin"
+      " --google_key_version 42"
+      " --output %s",
+      output_path.value().c_str());
+
+  EXPECT_COMMAND(
+      0, "diff test/data/atx_metadata.bin %s", output_path.value().c_str());
+}
+
 }  // namespace avb
