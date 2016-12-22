@@ -69,7 +69,7 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
     bool allow_verification_error, const AvbDescriptor* descriptor,
     AvbSlotVerifyData* slot_data) {
   AvbHashDescriptor hash_desc;
-  const uint8_t* desc_partition_name;
+  const uint8_t* desc_partition_name = NULL;
   const uint8_t* desc_salt;
   const uint8_t* desc_digest;
   char part_name[PART_NAME_MAX_SIZE];
