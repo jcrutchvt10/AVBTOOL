@@ -49,13 +49,14 @@ extern "C" {
 #define AVB_ATTR_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
 #define AVB_ATTR_PACKED __attribute__((packed))
 #define AVB_ATTR_NO_RETURN __attribute__((noreturn))
-#define AVB_ATTR_SENTINEL __attribute__((__sentinel__));
+#define AVB_ATTR_SENTINEL __attribute__((__sentinel__))
 
-/* Size in bytes used for word-alignment.
- *
- * Change this to match your architecture - must be a power of two.
- */
-#define AVB_WORD_ALIGNMENT_SIZE 8
+/* Size in bytes used for alignment. */
+#ifdef __LP64__
+#define AVB_ALIGNMENT_SIZE 8
+#else
+#define AVB_ALIGNMENT_SIZE 4
+#endif
 
 /* Compare |n| bytes in |src1| and |src2|.
  *

@@ -70,8 +70,8 @@ extern "C" {
  *
  * This has no effect unless AVB_ENABLE_DEBUG is defined.
  */
-#define avb_assert_word_aligned(addr) \
-  avb_assert((((uintptr_t)addr) & (AVB_WORD_ALIGNMENT_SIZE - 1)) == 0)
+#define avb_assert_aligned(addr) \
+  avb_assert((((uintptr_t)addr) & (AVB_ALIGNMENT_SIZE - 1)) == 0)
 
 #ifdef AVB_ENABLE_DEBUG
 /* Print functions, used for diagnostics.

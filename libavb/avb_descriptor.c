@@ -70,7 +70,7 @@ bool avb_descriptor_foreach(const uint8_t* image_data, size_t image_size,
   }
 
   /* Careful, not byteswapped - also ensure it's aligned properly. */
-  avb_assert_word_aligned(image_data);
+  avb_assert_aligned(image_data);
   header = (const AvbVBMetaImageHeader*)image_data;
   image_end = image_data + image_size;
 
@@ -88,7 +88,7 @@ bool avb_descriptor_foreach(const uint8_t* image_data, size_t image_size,
 
   for (p = desc_start; p < desc_end;) {
     const AvbDescriptor* dh = (const AvbDescriptor*)p;
-    avb_assert_word_aligned(dh);
+    avb_assert_aligned(dh);
     uint64_t nb_following = avb_be64toh(dh->num_bytes_following);
     uint64_t nb_total = sizeof(AvbDescriptor) + nb_following;
 
