@@ -62,6 +62,8 @@ static inline bool result_should_continue(AvbSlotVerifyResult result) {
     case AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED:
       return true;
   }
+
+  return false;
 }
 
 static AvbSlotVerifyResult load_and_verify_hash_partition(
