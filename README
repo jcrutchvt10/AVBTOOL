@@ -180,38 +180,41 @@ version of the reference implementation.
 
 The content for the vbmeta partition can be generated as follows:
 
- $ avbtool make_vbmeta_image                                                \
-     --output OUTPUT                                                        \
-     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing]          \
-     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]    \
-     [--include_descriptors_from_footer /path/to/image.bin]                 \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]          \
-     [--chain_partition part_name:rollback_index_location:/path/to/key1.bin]
+ $ avbtool make_vbmeta_image                                                    \
+     --output OUTPUT                                                            \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing_or_pub_key]   \
+     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
+     [--include_descriptors_from_footer /path/to/image.bin]                     \
+     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--chain_partition part_name:rollback_index_location:/path/to/key1.bin]    \
+     [--signing_helper /path/to/external/signer]
 
 An integrity footer containing the hash for an entire partition can be
 added to an existing image as follows:
 
- $ avbtool add_hash_footer                                               \
-     --image IMAGE                                                       \
-     --partition_name PARTNAME --partition_size SIZE                     \
-     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing]       \
-     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER] \
-     [--hash_algorithm HASH_ALG] [--salt HEX]                            \
-     [--include_descriptors_from_footer /path/to/image.bin]              \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]
+ $ avbtool add_hash_footer                                                      \
+     --image IMAGE                                                              \
+     --partition_name PARTNAME --partition_size SIZE                            \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing_or_pub_key]   \
+     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
+     [--hash_algorithm HASH_ALG] [--salt HEX]                                   \
+     [--include_descriptors_from_footer /path/to/image.bin]                     \
+     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--signing_helper /path/to/external/signer]
 
 An integrity footer containing the root digest and salt for a hashtree
 for a partition can be added to an existing image as follows. The
 hashtree is also appended to the image.
 
-  $ avbtool add_hashtree_footer                                          \
-     --image IMAGE                                                       \
-     --partition_name PARTNAME --partition_size SIZE                     \
-     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing]       \
-     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER] \
-     [--hash_algorithm HASH_ALG] [--salt HEX] [--block_size SIZE]        \
-     [--include_descriptors_from_footer /path/to/image.bin]              \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]
+  $ avbtool add_hashtree_footer                                                 \
+     --image IMAGE                                                              \
+     --partition_name PARTNAME --partition_size SIZE                            \
+     [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing_or_pub_key]   \
+     [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
+     [--hash_algorithm HASH_ALG] [--salt HEX] [--block_size SIZE]               \
+     [--include_descriptors_from_footer /path/to/image.bin]                     \
+     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--signing_helper /path/to/external/signer]
 
 The integrity footer on an image can be removed from an image. The
 hashtree can optionally be kept in place.
@@ -225,6 +228,18 @@ command on it, use the --calc_max_image_size option:
   $ avbtool add_hashtree_footer --partition_size $((10*1024*1024)) \
      --calc_max_image_size
   10330112
+
+The --signing_helper option can be used in 'make_vbmeta_image', 'add_hash_footer'
+and 'add_hashtree_footer' commands to specify any external program for signing
+hashes. The data to sign (including padding e.g. PKCS1-v1.5) is fed via STDIN
+and the signed data is returned via STDOUT. If --signing_helper is present in
+a command line, the --key option need only contain a public key. Arguments for
+a signing helper are 'algorithm' and 'public key'. If the signing helper exits
+with a non-zero exit code, it means failure.
+
+Here's an example invocation:
+
+ /path/to/my_signing_program SHA256_RSA2048 /path/to/publickey.pem
 
 -- BUILD SYSTEM INTEGRATION NOTES
 
