@@ -23,7 +23,8 @@
  */
 
 #if !defined(AVB_INSIDE_LIBAVB_AB_H) && !defined(AVB_COMPILATION)
-#error "Never include this file directly, include libavb_ab/libavb_ab.h instead."
+#error \
+    "Never include this file directly, include libavb_ab/libavb_ab.h instead."
 #endif
 
 #ifndef AVB_AB_FLOW_H_

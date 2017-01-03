@@ -88,9 +88,13 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
     return (*instance_map_)[&ops->ops];
   }
 
-  AvbOps* avb_ops() { return &avb_ops_; }
+  AvbOps* avb_ops() {
+    return &avb_ops_;
+  }
 
-  AvbABOps* avb_ab_ops() { return &avb_ab_ops_; }
+  AvbABOps* avb_ab_ops() {
+    return &avb_ab_ops_;
+  }
 
   FakeAvbOpsDelegate* delegate() {
     return delegate_;
@@ -128,12 +132,16 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
   }
 
   // FakeAvbOpsDelegate methods.
-  AvbIOResult read_from_partition(const char* partition, int64_t offset,
-                                  size_t num_bytes, void* buffer,
+  AvbIOResult read_from_partition(const char* partition,
+                                  int64_t offset,
+                                  size_t num_bytes,
+                                  void* buffer,
                                   size_t* out_num_read) override;
 
-  AvbIOResult write_to_partition(const char* partition, int64_t offset,
-                                 size_t num_bytes, const void* buffer) override;
+  AvbIOResult write_to_partition(const char* partition,
+                                 int64_t offset,
+                                 size_t num_bytes,
+                                 const void* buffer) override;
 
   AvbIOResult validate_vbmeta_public_key(AvbOps* ops,
                                          const uint8_t* public_key_data,
@@ -142,16 +150,19 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
                                          size_t public_key_metadata_length,
                                          bool* out_key_is_trusted) override;
 
-  AvbIOResult read_rollback_index(AvbOps* ops, size_t rollback_index_location,
+  AvbIOResult read_rollback_index(AvbOps* ops,
+                                  size_t rollback_index_location,
                                   uint64_t* out_rollback_index) override;
 
-  AvbIOResult write_rollback_index(AvbOps* ops, size_t rollback_index_location,
+  AvbIOResult write_rollback_index(AvbOps* ops,
+                                   size_t rollback_index_location,
                                    uint64_t rollback_index) override;
 
   AvbIOResult read_is_device_unlocked(AvbOps* ops,
                                       bool* out_is_device_unlocked) override;
 
-  AvbIOResult get_unique_guid_for_partition(AvbOps* ops, const char* partition,
+  AvbIOResult get_unique_guid_for_partition(AvbOps* ops,
+                                            const char* partition,
                                             char* guid_buf,
                                             size_t guid_buf_size) override;
 

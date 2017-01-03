@@ -38,7 +38,8 @@ bool avb_descriptor_validate_and_byteswap(const AvbDescriptor* src,
   return true;
 }
 
-bool avb_descriptor_foreach(const uint8_t* image_data, size_t image_size,
+bool avb_descriptor_foreach(const uint8_t* image_data,
+                            size_t image_size,
                             AvbDescriptorForeachFunc foreach_func,
                             void* user_data) {
   const AvbVBMetaImageHeader* header = NULL;
@@ -139,8 +140,8 @@ const AvbDescriptor** avb_descriptor_get_all(const uint8_t* image_data,
   size_t num_descriptors = 0;
   SetDescriptorData data;
 
-  avb_descriptor_foreach(image_data, image_size, count_descriptors,
-                         &num_descriptors);
+  avb_descriptor_foreach(
+      image_data, image_size, count_descriptors, &num_descriptors);
 
   data.descriptor_number = 0;
   data.descriptors =
