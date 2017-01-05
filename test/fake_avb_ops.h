@@ -82,10 +82,10 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
   virtual ~FakeAvbOps();
 
   static FakeAvbOps* GetInstanceFromAvbOps(AvbOps* ops) {
-    return (*instance_map_)[ops];
+    return reinterpret_cast<FakeAvbOps*>(ops->user_data);
   }
-  static FakeAvbOps* GetInstanceFromAvbABOps(AvbABOps* ops) {
-    return (*instance_map_)[&ops->ops];
+  static FakeAvbOps* GetInstanceFromAvbABOps(AvbABOps* ab_ops) {
+    return reinterpret_cast<FakeAvbOps*>(ab_ops->ops->user_data);
   }
 
   AvbOps* avb_ops() {
@@ -180,9 +180,6 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
   std::map<size_t, uint64_t> stored_rollback_indexes_;
 
   bool stored_is_device_unlocked_;
-
-  // Reverse maps ops pointers back to the associated fake instance.
-  static std::map<AvbOps*, FakeAvbOps*>* instance_map_;
 };
 
 }  // namespace avb

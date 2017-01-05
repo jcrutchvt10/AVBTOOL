@@ -284,12 +284,8 @@ static AvbIOResult my_ops_get_unique_guid_for_partition(AvbOps* ops,
 }
 
 FakeAvbOps::FakeAvbOps() {
-  if (!instance_map_) {
-    instance_map_ = new std::map<AvbOps*, FakeAvbOps*>;
-  }
-  (*instance_map_)[&avb_ops_] = this;
-  (*instance_map_)[&avb_ab_ops_.ops] = this;
-
+  avb_ops_.ab_ops = &avb_ab_ops_;
+  avb_ops_.user_data = this;
   avb_ops_.read_from_partition = my_ops_read_from_partition;
   avb_ops_.write_to_partition = my_ops_write_to_partition;
   avb_ops_.validate_vbmeta_public_key = my_ops_validate_vbmeta_public_key;
@@ -299,7 +295,7 @@ FakeAvbOps::FakeAvbOps() {
   avb_ops_.get_unique_guid_for_partition = my_ops_get_unique_guid_for_partition;
 
   // Just use the built-in A/B metadata read/write routines.
-  avb_ab_ops_.ops = avb_ops_;
+  avb_ab_ops_.ops = &avb_ops_;
   avb_ab_ops_.read_ab_metadata = avb_ab_data_read;
   avb_ab_ops_.write_ab_metadata = avb_ab_data_write;
 
@@ -307,7 +303,5 @@ FakeAvbOps::FakeAvbOps() {
 }
 
 FakeAvbOps::~FakeAvbOps() {}
-
-std::map<AvbOps*, FakeAvbOps*>* FakeAvbOps::instance_map_ = nullptr;
 
 }  // namespace avb
