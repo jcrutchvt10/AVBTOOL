@@ -255,7 +255,9 @@ const char* avb_vbmeta_verify_result_to_string(AvbVBMetaVerifyResult result);
  * integrity data for a whole set of partitions.
  */
 AvbVBMetaVerifyResult avb_vbmeta_image_verify(
-    const uint8_t* data, size_t length, const uint8_t** out_public_key_data,
+    const uint8_t* data,
+    size_t length,
+    const uint8_t** out_public_key_data,
     size_t* out_public_key_length) AVB_ATTR_WARN_UNUSED_RESULT;
 
 #ifdef __cplusplus

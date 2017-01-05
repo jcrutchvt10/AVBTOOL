@@ -63,7 +63,8 @@ extern "C" {
  * Returns an integer less than, equal to, or greater than zero if the
  * first |n| bytes of |src1| is found, respectively, to be less than,
  * to match, or be greater than the first |n| bytes of |src2|. */
-int avb_memcmp(const void* src1, const void* src2,
+int avb_memcmp(const void* src1,
+               const void* src2,
                size_t n) AVB_ATTR_WARN_UNUSED_RESULT;
 
 /* Compare two strings.

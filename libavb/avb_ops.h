@@ -86,9 +86,12 @@ struct AvbOps {
    * of the partition. In this case the value returned in
    * |out_num_read| may be smaller than |num_bytes|.
    */
-  AvbIOResult (*read_from_partition)(AvbOps* ops, const char* partition,
-                                     int64_t offset, size_t num_bytes,
-                                     void* buffer, size_t* out_num_read);
+  AvbIOResult (*read_from_partition)(AvbOps* ops,
+                                     const char* partition,
+                                     int64_t offset,
+                                     size_t num_bytes,
+                                     void* buffer,
+                                     size_t* out_num_read);
 
   /* Writes |num_bytes| from |bffer| at offset |offset| to partition
    * with name |partition| (NUL-terminated UTF-8 string). If |offset|
@@ -106,8 +109,10 @@ struct AvbOps {
    * This function never does any partial I/O, it either transfers all
    * of the requested bytes or returns an error.
    */
-  AvbIOResult (*write_to_partition)(AvbOps* ops, const char* partition,
-                                    int64_t offset, size_t num_bytes,
+  AvbIOResult (*write_to_partition)(AvbOps* ops,
+                                    const char* partition,
+                                    int64_t offset,
+                                    size_t num_bytes,
                                     const void* buffer);
 
   /* Checks if the given public key used to sign the 'vbmeta'

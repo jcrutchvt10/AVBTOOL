@@ -81,8 +81,10 @@ class BaseAvbToolTest : public ::testing::Test {
                    " --rollback_index %" PRIu64
                    " %s %s "
                    " --output %s",
-                   rollback_index, additional_options.c_str(),
-                   signing_options.c_str(), vbmeta_image_path_.value().c_str());
+                   rollback_index,
+                   additional_options.c_str(),
+                   signing_options.c_str(),
+                   vbmeta_image_path_.value().c_str());
     int64_t file_size;
     ASSERT_TRUE(base::GetFileSize(vbmeta_image_path_, &file_size));
     vbmeta_image_.resize(file_size);
@@ -102,17 +104,20 @@ class BaseAvbToolTest : public ::testing::Test {
     }
     base::FilePath image_path = testdir_.Append(file_name);
     EXPECT_EQ(image_size,
-              static_cast<const size_t>(base::WriteFile(
-                  image_path, reinterpret_cast<const char*>(image.data()),
-                  image.size())));
+              static_cast<const size_t>(
+                  base::WriteFile(image_path,
+                                  reinterpret_cast<const char*>(image.data()),
+                                  image.size())));
     return image_path;
   }
 
   /* Returns the output of 'avbtool info_image' for a given image. */
   std::string InfoImage(const base::FilePath& image_path) {
     base::FilePath tmp_path = testdir_.Append("info_output.txt");
-    EXPECT_COMMAND(0, "./avbtool info_image --image %s --output %s",
-                   image_path.value().c_str(), tmp_path.value().c_str());
+    EXPECT_COMMAND(0,
+                   "./avbtool info_image --image %s --output %s",
+                   image_path.value().c_str(),
+                   tmp_path.value().c_str());
     std::string info_data;
     EXPECT_TRUE(base::ReadFileToString(tmp_path, &info_data));
     return info_data;
@@ -124,7 +129,8 @@ class BaseAvbToolTest : public ::testing::Test {
     EXPECT_COMMAND(0,
                    "./avbtool extract_public_key --key %s"
                    " --output %s",
-                   key_path.value().c_str(), tmp_path.value().c_str());
+                   key_path.value().c_str(),
+                   tmp_path.value().c_str());
     std::string key_data;
     EXPECT_TRUE(base::ReadFileToString(tmp_path, &key_data));
     return key_data;
