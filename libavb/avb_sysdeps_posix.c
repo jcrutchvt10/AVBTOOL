@@ -42,13 +42,21 @@ void* avb_memset(void* dest, const int c, size_t n) {
   return memset(dest, c, n);
 }
 
-int avb_strcmp(const char* s1, const char* s2) { return strcmp(s1, s2); }
+int avb_strcmp(const char* s1, const char* s2) {
+  return strcmp(s1, s2);
+}
 
-size_t avb_strlen(const char* str) { return strlen(str); }
+size_t avb_strlen(const char* str) {
+  return strlen(str);
+}
 
-void avb_abort(void) { abort(); }
+void avb_abort(void) {
+  abort();
+}
 
-void avb_print(const char* message) { fprintf(stderr, "%s", message); }
+void avb_print(const char* message) {
+  fprintf(stderr, "%s", message);
+}
 
 void avb_printv(const char* message, ...) {
   va_list ap;
@@ -61,6 +69,10 @@ void avb_printv(const char* message, ...) {
   va_end(ap);
 }
 
-void* avb_malloc_(size_t size) { return malloc(size); }
+void* avb_malloc_(size_t size) {
+  return malloc(size);
+}
 
-void avb_free(void* ptr) { free(ptr); }
+void avb_free(void* ptr) {
+  free(ptr);
+}

@@ -83,13 +83,17 @@ int avb_safe_memcmp(const void* s1, const void* s2, size_t n) {
   const unsigned char* us2 = s2;
   int result = 0;
 
-  if (0 == n) return 0;
+  if (0 == n) {
+    return 0;
+  }
 
   /*
    * Code snippet without data-dependent branch due to Nate Lawson
    * (nate@root.org) of Root Labs.
    */
-  while (n--) result |= *us1++ ^ *us2++;
+  while (n--) {
+    result |= *us1++ ^ *us2++;
+  }
 
   return result != 0;
 }
@@ -112,7 +116,9 @@ bool avb_safe_add_to(uint64_t* value, uint64_t value_to_add) {
 
 bool avb_safe_add(uint64_t* out_result, uint64_t a, uint64_t b) {
   uint64_t dummy;
-  if (out_result == NULL) out_result = &dummy;
+  if (out_result == NULL) {
+    out_result = &dummy;
+  }
   *out_result = a;
   return avb_safe_add_to(out_result, b);
 }
@@ -160,8 +166,12 @@ fail:
   return false;
 }
 
-bool avb_str_concat(char* buf, size_t buf_size, const char* str1,
-                    size_t str1_len, const char* str2, size_t str2_len) {
+bool avb_str_concat(char* buf,
+                    size_t buf_size,
+                    const char* str1,
+                    size_t str1_len,
+                    const char* str2,
+                    size_t str2_len) {
   uint64_t combined_len;
 
   if (!avb_safe_add(&combined_len, str1_len, str2_len)) {
@@ -220,21 +230,26 @@ const char* avb_strstr(const char* haystack, const char* needle) {
    * |needle| matches. If so, check the rest of |needle|.
    */
   for (n = 0; haystack[n] != '\0'; n++) {
-    if (haystack[n] != needle[0]) continue;
+    if (haystack[n] != needle[0]) {
+      continue;
+    }
 
     for (m = 1;; m++) {
       if (needle[m] == '\0') {
         return haystack + n;
       }
 
-      if (haystack[n + m] != needle[m]) break;
+      if (haystack[n + m] != needle[m]) {
+        break;
+      }
     }
   }
 
   return NULL;
 }
 
-const char* avb_strv_find_str(const char* const* strings, const char* str,
+const char* avb_strv_find_str(const char* const* strings,
+                              const char* str,
                               size_t str_size) {
   size_t n;
   for (n = 0; strings[n] != NULL; n++) {
@@ -262,7 +277,9 @@ char* avb_replace(const char* str, const char* search, const char* replace) {
     size_t num_new;
 
     s = avb_strstr(str, search);
-    if (s == NULL) break;
+    if (s == NULL) {
+      break;
+    }
 
     num_before = s - str;
 
@@ -305,7 +322,9 @@ char* avb_replace(const char* str, const char* search, const char* replace) {
     size_t num_remaining = avb_strlen(str_after_last_replace);
     size_t num_new = ret_len + num_remaining + 1;
     char* new_str = avb_malloc(num_new);
-    if (ret == NULL) goto out;
+    if (ret == NULL) {
+      goto out;
+    }
     avb_memcpy(new_str, ret, ret_len);
     avb_memcpy(new_str + ret_len, str_after_last_replace, num_remaining);
     new_str[num_new - 1] = '\0';
