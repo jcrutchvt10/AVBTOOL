@@ -48,7 +48,9 @@ static struct fstab* open_fstab(void) {
   property_get("ro.hardware", propbuf, "");
   snprintf(fstab_name, sizeof(fstab_name), "/fstab.%s", propbuf);
   fstab = fs_mgr_read_fstab(fstab_name);
-  if (fstab != NULL) return fstab;
+  if (fstab != NULL) {
+    return fstab;
+  }
 
   fstab = fs_mgr_read_fstab("/fstab.device");
   return fstab;
@@ -110,9 +112,12 @@ static int open_partition(const char* name, int flags) {
   return fd;
 }
 
-static AvbIOResult read_from_partition(AvbOps* ops, const char* partition,
-                                       int64_t offset, size_t num_bytes,
-                                       void* buffer, size_t* out_num_read) {
+static AvbIOResult read_from_partition(AvbOps* ops,
+                                       const char* partition,
+                                       int64_t offset,
+                                       size_t num_bytes,
+                                       void* buffer,
+                                       size_t* out_num_read) {
   int fd;
   off_t where;
   ssize_t num_read;
@@ -161,8 +166,10 @@ out:
   return ret;
 }
 
-static AvbIOResult write_to_partition(AvbOps* ops, const char* partition,
-                                      int64_t offset, size_t num_bytes,
+static AvbIOResult write_to_partition(AvbOps* ops,
+                                      const char* partition,
+                                      int64_t offset,
+                                      size_t num_bytes,
                                       const void* buffer) {
   int fd;
   off_t where;
@@ -228,4 +235,6 @@ out:
   return ab_ops;
 }
 
-void avb_ops_device_free(AvbABOps* ab_ops) { free(ab_ops); }
+void avb_ops_device_free(AvbABOps* ab_ops) {
+  free(ab_ops);
+}
