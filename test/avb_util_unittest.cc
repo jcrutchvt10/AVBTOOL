@@ -461,8 +461,8 @@ TEST(UtilTest, StrvFindStr) {
 TEST(UtilTest, StrReplace) {
   // We don't care about leaking strings from avb_replace().
   EXPECT_EQ("OK blah bah $(FOO OK blah",
-            std::string(avb_replace("$(FOO) blah bah $(FOO $(FOO) blah",
-                                    "$(FOO)", "OK")));
+            std::string(avb_replace(
+                "$(FOO) blah bah $(FOO $(FOO) blah", "$(FOO)", "OK")));
   EXPECT_EQ("OK", std::string(avb_replace("$(FOO)", "$(FOO)", "OK")));
   EXPECT_EQ(" OK", std::string(avb_replace(" $(FOO)", "$(FOO)", "OK")));
   EXPECT_EQ("OK ", std::string(avb_replace("$(FOO) ", "$(FOO)", "OK")));
