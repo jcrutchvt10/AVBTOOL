@@ -219,15 +219,22 @@ AvbABOps* avb_ops_device_new(void) {
 
   ab_ops = calloc(1, sizeof(AvbABOps));
   if (ab_ops == NULL) {
+    avb_error("Error allocating memory for AvbABOps.\n");
+    goto out;
+  }
+
+  ab_ops->ops = calloc(1, sizeof(AvbOps));
+  if (ab_ops->ops == NULL) {
     avb_error("Error allocating memory for AvbOps.\n");
+    free(ab_ops);
     goto out;
   }
 
   /* We only need these operations since that's all what is being used
    * by the A/B routines.
    */
-  ab_ops->ops.read_from_partition = read_from_partition;
-  ab_ops->ops.write_to_partition = write_to_partition;
+  ab_ops->ops->read_from_partition = read_from_partition;
+  ab_ops->ops->write_to_partition = write_to_partition;
   ab_ops->read_ab_metadata = avb_ab_data_read;
   ab_ops->write_ab_metadata = avb_ab_data_write;
 
@@ -236,5 +243,6 @@ out:
 }
 
 void avb_ops_device_free(AvbABOps* ab_ops) {
+  free(ab_ops->ops);
   free(ab_ops);
 }
