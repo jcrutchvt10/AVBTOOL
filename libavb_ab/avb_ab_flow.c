@@ -81,7 +81,7 @@ void avb_ab_data_init(AvbABData* data) {
 #define AB_METADATA_MISC_PARTITION_OFFSET 2048
 
 AvbIOResult avb_ab_data_read(AvbABOps* ab_ops, AvbABData* data) {
-  AvbOps* ops = &(ab_ops->ops);
+  AvbOps* ops = ab_ops->ops;
   AvbABData serialized;
   AvbIOResult io_ret;
   size_t num_bytes_read;
@@ -112,7 +112,7 @@ AvbIOResult avb_ab_data_read(AvbABOps* ab_ops, AvbABData* data) {
 }
 
 AvbIOResult avb_ab_data_write(AvbABOps* ab_ops, const AvbABData* data) {
-  AvbOps* ops = &(ab_ops->ops);
+  AvbOps* ops = ab_ops->ops;
   AvbABData serialized;
   AvbIOResult io_ret;
 
@@ -206,7 +206,7 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
                             const char* const* requested_partitions,
                             bool allow_verification_error,
                             AvbSlotVerifyData** out_data) {
-  AvbOps* ops = &(ab_ops->ops);
+  AvbOps* ops = ab_ops->ops;
   AvbSlotVerifyData* slot_data[2] = {NULL, NULL};
   AvbSlotVerifyData* data = NULL;
   AvbABFlowResult ret;

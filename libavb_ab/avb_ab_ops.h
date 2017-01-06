@@ -42,11 +42,11 @@ typedef struct AvbABOps AvbABOps;
 struct AvbABData;
 
 /* High-level operations/functions/methods for A/B that are platform
- * dependent. This struct extends the AvbOps struct from libavb.
+ * dependent.
  */
 struct AvbABOps {
   /* Operations from libavb. */
-  AvbOps ops;
+  AvbOps* ops;
 
   /* Reads A/B metadata from persistent storage. Returned data is
    * properly byteswapped. Returns AVB_IO_RESULT_OK on success, error

@@ -63,12 +63,24 @@ typedef enum {
 struct AvbOps;
 typedef struct AvbOps AvbOps;
 
-struct AvbABData;
+/* Forward-declaration of operations in libavb_ab. */
+struct AvbABOps;
 
 /* High-level operations/functions/methods that are platform
  * dependent.
  */
 struct AvbOps {
+  /* This pointer can be used by the application/bootloader using
+   * libavb and is typically used in each operation to get a pointer
+   * to platform-specific resources. It cannot be used by libraries.
+   */
+  void* user_data;
+
+  /* If libavb_ab is used, this should point to the
+   * AvbABOps. Otherwise it must be set to NULL.
+   */
+  struct AvbABOps* ab_ops;
+
   /* Reads |num_bytes| from offset |offset| from partition with name
    * |partition| (NUL-terminated UTF-8 string). If |offset| is
    * negative, its absolute value should be interpreted as the number

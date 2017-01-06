@@ -32,7 +32,6 @@
 #include "avb_ops_device.h"
 
 static AvbABOps* ab_ops = NULL;
-static AvbOps* ops = NULL;
 
 static void module_init(boot_control_module_t* module) {
   if (ab_ops != NULL) {
@@ -43,7 +42,6 @@ static void module_init(boot_control_module_t* module) {
   if (ab_ops == NULL) {
     avb_error("Unable to allocate AvbOps instance.\n");
   }
-  ops = &(ab_ops->ops);
 }
 
 static unsigned int module_getNumberSlots(boot_control_module_t* module) {
