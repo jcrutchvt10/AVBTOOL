@@ -892,6 +892,14 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       goto fail;
     }
 
+    /* Add androidboot.vbmeta.device option. */
+    if (!cmdline_append_option(slot_data,
+                               "androidboot.vbmeta.device",
+                               "PARTUUID=$(ANDROID_VBMETA_PARTUUID)")) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto fail;
+    }
+
     /* Substitute $(ANDROID_SYSTEM_PARTUUID) and friends. */
     if (slot_data->cmdline != NULL) {
       char* new_cmdline = sub_cmdline(ops, slot_data->cmdline, ab_suffix);
@@ -966,7 +974,6 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       case AVB_ALGORITHM_TYPE_SHA512_RSA8192: {
         AvbSHA512Ctx ctx;
         size_t n, total_size = 0;
-        ;
         avb_sha512_init(&ctx);
         for (n = 0; n < slot_data->num_vbmeta_images; n++) {
           avb_sha512_update(&ctx,
