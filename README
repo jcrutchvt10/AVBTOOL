@@ -185,7 +185,7 @@ The content for the vbmeta partition can be generated as follows:
      [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing_or_pub_key]   \
      [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
      [--include_descriptors_from_footer /path/to/image.bin]                     \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--chain_partition part_name:rollback_index_location:/path/to/key1.bin]    \
      [--signing_helper /path/to/external/signer]
 
@@ -199,7 +199,7 @@ added to an existing image as follows:
      [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
      [--hash_algorithm HASH_ALG] [--salt HEX]                                   \
      [--include_descriptors_from_footer /path/to/image.bin]                     \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--signing_helper /path/to/external/signer]
 
 An integrity footer containing the root digest and salt for a hashtree
@@ -213,7 +213,7 @@ hashtree is also appended to the image.
      [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
      [--hash_algorithm HASH_ALG] [--salt HEX] [--block_size SIZE]               \
      [--include_descriptors_from_footer /path/to/image.bin]                     \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--signing_helper /path/to/external/signer]
 
 The integrity footer on an image can be removed from an image. The
