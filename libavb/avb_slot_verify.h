@@ -127,7 +127,8 @@ typedef struct {
  * The |cmdline| field is a NUL-terminated string in UTF-8 resulting
  * from concatenating all |AvbKernelCmdlineDescriptor| and then
  * performing proper substitution of the variables
- * $(ANDROID_SYSTEM_PARTUUID) and $(ANDROID_BOOT_PARTUUID) using the
+ * $(ANDROID_SYSTEM_PARTUUID), $(ANDROID_BOOT_PARTUUID), and
+ * $(ANDROID_VBMETA_PARTUUID) using the
  * get_unique_guid_for_partition() operation in |AvbOps|.
  *
  * Additionally, the |cmdline| field will have the following kernel
@@ -143,6 +144,11 @@ typedef struct {
  *
  *   androidboot.vbmeta.{hash_alg, size, digest}: Will be set to
  *   the digest of all images in |vbmeta_images|.
+ *
+ *   androidboot.vbmeta.device: This is set to the value
+ *   PARTUUID=$(ANDROID_VBMETA_PARTUUID) before substitution so it
+ *   will end up pointing to the vbmeta partition for the verified
+ *   slot.
  *
  * This struct may grow in the future without it being considered an
  * ABI break.
