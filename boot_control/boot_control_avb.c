@@ -32,16 +32,16 @@
 #include "avb_ops_device.h"
 
 static AvbABOps* ab_ops = NULL;
-static AvbOps* ops = NULL;
 
 static void module_init(boot_control_module_t* module) {
-  if (ab_ops != NULL) return;
+  if (ab_ops != NULL) {
+    return;
+  }
 
   ab_ops = avb_ops_device_new();
   if (ab_ops == NULL) {
     avb_error("Unable to allocate AvbOps instance.\n");
   }
-  ops = &(ab_ops->ops);
 }
 
 static unsigned int module_getNumberSlots(boot_control_module_t* module) {
@@ -127,7 +127,9 @@ static int module_isSlotMarkedSuccessful(struct boot_control_module* module,
 static const char* module_getSuffix(boot_control_module_t* module,
                                     unsigned int slot) {
   static const char* suffix[2] = {"_a", "_b"};
-  if (slot >= 2) return NULL;
+  if (slot >= 2) {
+    return NULL;
+  }
   return suffix[slot];
 }
 

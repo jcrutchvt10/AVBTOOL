@@ -38,6 +38,8 @@
 
 #include "avb_unittest_util.h"
 
+namespace avb {
+
 class AvbToolTest : public BaseAvbToolTest {
  public:
   AvbToolTest() {}
@@ -61,7 +63,9 @@ TEST_F(AvbToolTest, AvbVersionInSync) {
 }
 
 TEST_F(AvbToolTest, ExtractPublicKey) {
-  GenerateVBMetaImage("vbmeta.img", "SHA256_RSA2048", 0,
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
                       base::FilePath("test/data/testkey_rsa2048.pem"));
 
   std::string key_data =
@@ -74,13 +78,16 @@ TEST_F(AvbToolTest, ExtractPublicKey) {
   size_t auxiliary_data_block_offset =
       sizeof(AvbVBMetaImageHeader) + h.authentication_data_block_size;
   EXPECT_GT(h.auxiliary_data_block_size, key_data.size());
-  EXPECT_EQ(0, memcmp(key_data.data(),
-                      d + auxiliary_data_block_offset + h.public_key_offset,
-                      key_data.size()));
+  EXPECT_EQ(0,
+            memcmp(key_data.data(),
+                   d + auxiliary_data_block_offset + h.public_key_offset,
+                   key_data.size()));
 }
 
 TEST_F(AvbToolTest, CheckDescriptors) {
-  GenerateVBMetaImage("vbmeta.img", "SHA256_RSA2048", 0,
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
                       base::FilePath("test/data/testkey_rsa2048.pem"),
                       "--prop foo:brillo "
                       "--prop bar:chromeos "
@@ -97,69 +104,84 @@ TEST_F(AvbToolTest, CheckDescriptors) {
       reinterpret_cast<AvbVBMetaImageHeader*>(vbmeta_image_.data()), &h);
 
   EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_OK,
-            avb_vbmeta_image_verify(vbmeta_image_.data(), vbmeta_image_.size(),
-                                    nullptr, nullptr));
+            avb_vbmeta_image_verify(
+                vbmeta_image_.data(), vbmeta_image_.size(), nullptr, nullptr));
 
   const char* s;
   size_t len;
   uint64_t val;
 
   // Basic.
-  s = avb_property_lookup(vbmeta_image_.data(), vbmeta_image_.size(), "foo", 0,
-                          &len);
+  s = avb_property_lookup(
+      vbmeta_image_.data(), vbmeta_image_.size(), "foo", 0, &len);
   EXPECT_EQ(0, strcmp(s, "brillo"));
   EXPECT_EQ(6U, len);
-  s = avb_property_lookup(vbmeta_image_.data(), vbmeta_image_.size(), "bar", 0,
-                          &len);
+  s = avb_property_lookup(
+      vbmeta_image_.data(), vbmeta_image_.size(), "bar", 0, &len);
   EXPECT_EQ(0, strcmp(s, "chromeos"));
   EXPECT_EQ(8U, len);
-  s = avb_property_lookup(vbmeta_image_.data(), vbmeta_image_.size(),
-                          "non-existant", 0, &len);
+  s = avb_property_lookup(
+      vbmeta_image_.data(), vbmeta_image_.size(), "non-existant", 0, &len);
   EXPECT_EQ(0U, len);
   EXPECT_EQ(NULL, s);
 
   // Numbers.
   EXPECT_NE(
-      0, avb_property_lookup_uint64(vbmeta_image_.data(), vbmeta_image_.size(),
-                                    "prisoner", 0, &val));
+      0,
+      avb_property_lookup_uint64(
+          vbmeta_image_.data(), vbmeta_image_.size(), "prisoner", 0, &val));
   EXPECT_EQ(24601U, val);
 
   EXPECT_NE(
-      0, avb_property_lookup_uint64(vbmeta_image_.data(), vbmeta_image_.size(),
-                                    "hexnumber", 0, &val));
+      0,
+      avb_property_lookup_uint64(
+          vbmeta_image_.data(), vbmeta_image_.size(), "hexnumber", 0, &val));
   EXPECT_EQ(0xcafeU, val);
 
-  EXPECT_NE(
-      0, avb_property_lookup_uint64(vbmeta_image_.data(), vbmeta_image_.size(),
-                                    "hexnumber_capital", 0, &val));
+  EXPECT_NE(0,
+            avb_property_lookup_uint64(vbmeta_image_.data(),
+                                       vbmeta_image_.size(),
+                                       "hexnumber_capital",
+                                       0,
+                                       &val));
   EXPECT_EQ(0xcafeU, val);
 
-  EXPECT_NE(
-      0, avb_property_lookup_uint64(vbmeta_image_.data(), vbmeta_image_.size(),
-                                    "large_hexnumber", 0, &val));
+  EXPECT_NE(0,
+            avb_property_lookup_uint64(vbmeta_image_.data(),
+                                       vbmeta_image_.size(),
+                                       "large_hexnumber",
+                                       0,
+                                       &val));
   EXPECT_EQ(0xfedcba9876543210U, val);
 
   // We could catch overflows and return an error ... but we currently don't.
-  EXPECT_NE(
-      0, avb_property_lookup_uint64(vbmeta_image_.data(), vbmeta_image_.size(),
-                                    "larger_than_uint64", 0, &val));
+  EXPECT_NE(0,
+            avb_property_lookup_uint64(vbmeta_image_.data(),
+                                       vbmeta_image_.size(),
+                                       "larger_than_uint64",
+                                       0,
+                                       &val));
   EXPECT_EQ(0xedcba98765432101U, val);
 
   // Number-parsing failures.
-  EXPECT_EQ(0, avb_property_lookup_uint64(
-                   vbmeta_image_.data(), vbmeta_image_.size(), "foo", 0, &val));
+  EXPECT_EQ(0,
+            avb_property_lookup_uint64(
+                vbmeta_image_.data(), vbmeta_image_.size(), "foo", 0, &val));
 
-  EXPECT_EQ(
-      0, avb_property_lookup_uint64(vbmeta_image_.data(), vbmeta_image_.size(),
-                                    "almost_a_number", 0, &val));
+  EXPECT_EQ(0,
+            avb_property_lookup_uint64(vbmeta_image_.data(),
+                                       vbmeta_image_.size(),
+                                       "almost_a_number",
+                                       0,
+                                       &val));
 
   // Blobs.
   //
   // test/data/small_blob.bin is 21 byte file full of NUL-bytes except
   // for the string "brillo ftw!" at index 2 and '\n' at the last
   // byte.
-  s = avb_property_lookup(vbmeta_image_.data(), vbmeta_image_.size(), "blob", 0,
-                          &len);
+  s = avb_property_lookup(
+      vbmeta_image_.data(), vbmeta_image_.size(), "blob", 0, &len);
   EXPECT_EQ(21U, len);
   EXPECT_EQ(0, memcmp(s, "\0\0", 2));
   EXPECT_EQ(0, memcmp(s + 2, "brillo ftw!", 11));
@@ -169,7 +191,9 @@ TEST_F(AvbToolTest, CheckDescriptors) {
 
 TEST_F(AvbToolTest, CheckRollbackIndex) {
   uint64_t rollback_index = 42;
-  GenerateVBMetaImage("vbmeta.img", "SHA256_RSA2048", rollback_index,
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      rollback_index,
                       base::FilePath("test/data/testkey_rsa2048.pem"));
 
   AvbVBMetaImageHeader h;
@@ -180,15 +204,18 @@ TEST_F(AvbToolTest, CheckRollbackIndex) {
 }
 
 TEST_F(AvbToolTest, CheckPubkeyReturned) {
-  GenerateVBMetaImage("vbmeta.img", "SHA256_RSA2048", 0,
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
                       base::FilePath("test/data/testkey_rsa2048.pem"));
 
   const uint8_t* pubkey = NULL;
   size_t pubkey_length = 0;
 
-  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_OK,
-            avb_vbmeta_image_verify(vbmeta_image_.data(), vbmeta_image_.size(),
-                                    &pubkey, &pubkey_length));
+  EXPECT_EQ(
+      AVB_VBMETA_VERIFY_RESULT_OK,
+      avb_vbmeta_image_verify(
+          vbmeta_image_.data(), vbmeta_image_.size(), &pubkey, &pubkey_length));
 
   AvbVBMetaImageHeader h;
   avb_vbmeta_image_header_to_host_byte_order(
@@ -203,7 +230,9 @@ TEST_F(AvbToolTest, CheckPubkeyReturned) {
 }
 
 TEST_F(AvbToolTest, Info) {
-  GenerateVBMetaImage("vbmeta.img", "SHA256_RSA2048", 0,
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
                       base::FilePath("test/data/testkey_rsa2048.pem"),
                       "--prop foo:brillo "
                       "--prop bar:chromeos "
@@ -223,6 +252,7 @@ TEST_F(AvbToolTest, Info) {
       "Auxiliary Block:          3200 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           0\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Prop: foo -> 'brillo'\n"
       "    Prop: bar -> 'chromeos'\n"
@@ -246,16 +276,6 @@ static bool collect_descriptors(const AvbDescriptor* descriptor,
   return true;  // Keep iterating.
 }
 
-static std::string mem_to_hexstring(const uint8_t* data, size_t len) {
-  std::string ret;
-  char digits[17] = "0123456789abcdef";
-  for (size_t n = 0; n < len; n++) {
-    ret.push_back(digits[data[n] >> 4]);
-    ret.push_back(digits[data[n] & 0x0f]);
-  }
-  return ret;
-}
-
 void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   const size_t rootfs_size = 1028 * 1024;
   const size_t partition_size = 1536 * 1024;
@@ -275,14 +295,19 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   }
   base::FilePath rootfs_path = testdir_.Append("rootfs.bin");
   EXPECT_EQ(rootfs_size,
-            static_cast<const size_t>(base::WriteFile(
-                rootfs_path, reinterpret_cast<const char*>(rootfs.data()),
-                rootfs.size())));
+            static_cast<const size_t>(
+                base::WriteFile(rootfs_path,
+                                reinterpret_cast<const char*>(rootfs.data()),
+                                rootfs.size())));
 
   if (sparse_image) {
-    EXPECT_COMMAND(0, "mv %s %s.unsparse", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "mv %s %s.unsparse",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
-    EXPECT_COMMAND(0, "img2simg %s.unsparse %s", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "img2simg %s.unsparse %s",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
     EXPECT_COMMAND(0, "rm -f %s.unsparse", rootfs_path.value().c_str());
   }
@@ -295,7 +320,8 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
                    "--partition_size %d --partition_name foobar "
                    "--algorithm SHA256_RSA2048 "
                    "--key test/data/testkey_rsa2048.pem",
-                   rootfs_path.value().c_str(), (int)partition_size);
+                   rootfs_path.value().c_str(),
+                   (int)partition_size);
 
     ASSERT_EQ(base::StringPrintf("Footer version:           1.0\n"
                                  "Image size:               1572864 bytes\n"
@@ -309,6 +335,7 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
                                  "Auxiliary Block:          704 bytes\n"
                                  "Algorithm:                SHA256_RSA2048\n"
                                  "Rollback Index:           0\n"
+                                 "Flags:                    0\n"
                                  "Descriptors:\n"
                                  "    Hash descriptor:\n"
                                  "      Image Size:            1052672 bytes\n"
@@ -323,9 +350,13 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   }
 
   if (sparse_image) {
-    EXPECT_COMMAND(0, "mv %s %s.sparse", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "mv %s %s.sparse",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
-    EXPECT_COMMAND(0, "simg2img %s.sparse %s", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "simg2img %s.sparse %s",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
     EXPECT_COMMAND(0, "rm -f %s.sparse", rootfs_path.value().c_str());
   }
@@ -346,10 +377,11 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
 
   // Check footer contains correct data.
   AvbFooter f;
-  EXPECT_NE(0, avb_footer_validate_and_byteswap(
-                   reinterpret_cast<const AvbFooter*>(
-                       part_data.data() + part_data.size() - AVB_FOOTER_SIZE),
-                   &f));
+  EXPECT_NE(0,
+            avb_footer_validate_and_byteswap(
+                reinterpret_cast<const AvbFooter*>(
+                    part_data.data() + part_data.size() - AVB_FOOTER_SIZE),
+                &f));
   EXPECT_EQ(
       std::string(reinterpret_cast<const char*>(f.magic), AVB_FOOTER_MAGIC_LEN),
       AVB_FOOTER_MAGIC);
@@ -367,8 +399,8 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
 
   // Collect all descriptors.
   std::vector<const AvbDescriptor*> descriptors;
-  avb_descriptor_foreach(vbmeta_data, f.vbmeta_size, collect_descriptors,
-                         &descriptors);
+  avb_descriptor_foreach(
+      vbmeta_data, f.vbmeta_size, collect_descriptors, &descriptors);
 
   // We should only have a single descriptor and it should be a
   // hash descriptor.
@@ -376,8 +408,9 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   EXPECT_EQ(AVB_DESCRIPTOR_TAG_HASH, avb_be64toh(descriptors[0]->tag));
   AvbHashDescriptor d;
   EXPECT_NE(
-      0, avb_hash_descriptor_validate_and_byteswap(
-             reinterpret_cast<const AvbHashDescriptor*>(descriptors[0]), &d));
+      0,
+      avb_hash_descriptor_validate_and_byteswap(
+          reinterpret_cast<const AvbHashDescriptor*>(descriptors[0]), &d));
   EXPECT_EQ(1052672UL, d.image_size);
   EXPECT_EQ(6UL, d.partition_name_len);
   EXPECT_EQ(4UL, d.salt_len);
@@ -385,8 +418,9 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   const uint8_t* desc_end = reinterpret_cast<const uint8_t*>(descriptors[0]) +
                             sizeof(AvbHashDescriptor);
   uint64_t o = 0;
-  EXPECT_EQ("foobar", std::string(reinterpret_cast<const char*>(desc_end + o),
-                                  d.partition_name_len));
+  EXPECT_EQ("foobar",
+            std::string(reinterpret_cast<const char*>(desc_end + o),
+                        d.partition_name_len));
   o += d.partition_name_len;
   EXPECT_EQ("d00df00d", mem_to_hexstring(desc_end + o, d.salt_len));
   o += d.salt_len;
@@ -394,24 +428,28 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
             mem_to_hexstring(desc_end + o, d.digest_len));
 
   // Check that the footer is correctly erased.
-  EXPECT_COMMAND(0, "./avbtool erase_footer --image %s",
-                 rootfs_path.value().c_str());
+  EXPECT_COMMAND(
+      0, "./avbtool erase_footer --image %s", rootfs_path.value().c_str());
   int64_t erased_footer_file_size;
   ASSERT_TRUE(base::GetFileSize(rootfs_path, &erased_footer_file_size));
   EXPECT_EQ(static_cast<size_t>(erased_footer_file_size), rootfs_size);
 }
 
-TEST_F(AvbToolTest, AddHashFooter) { AddHashFooterTest(false); }
+TEST_F(AvbToolTest, AddHashFooter) {
+  AddHashFooterTest(false);
+}
 
-TEST_F(AvbToolTest, AddHashFooterSparse) { AddHashFooterTest(true); }
+TEST_F(AvbToolTest, AddHashFooterSparse) {
+  AddHashFooterTest(true);
+}
 
 static std::string RemoveLinesStartingWith(const std::string& str,
                                            const std::string& prefix) {
   std::vector<std::string> lines;
   std::string ret;
 
-  lines = base::SplitString(str, "\n", base::KEEP_WHITESPACE,
-                            base::SPLIT_WANT_NONEMPTY);
+  lines = base::SplitString(
+      str, "\n", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
   for (const std::string& line : lines) {
     if (!base::StartsWith(line, prefix, base::CompareCase::SENSITIVE)) {
       ret += line;
@@ -431,7 +469,8 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
   // this since it will put a big hole (e.g. "Don't care" chunk) at
   // the end.
   base::FilePath partition_path = testdir_.Append("partition.bin");
-  EXPECT_COMMAND(0, "make_ext4fs -s -L test -l %zd %s",
+  EXPECT_COMMAND(0,
+                 "make_ext4fs -s -L test -l %zd %s",
                  partition_size - metadata_size,
                  partition_path.value().c_str());
 
@@ -441,7 +480,8 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
                  "--partition_size %d --partition_name foobar "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem",
-                 partition_path.value().c_str(), (int)partition_size);
+                 partition_path.value().c_str(),
+                 (int)partition_size);
 
   // Since we may be using an arbritary version of make_ext4fs
   // (because of different branches) the contents of the resulting
@@ -462,6 +502,7 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
       "Auxiliary Block:          704 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           0\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Hash descriptor:\n"
       "      Image Size:            10354688 bytes\n"
@@ -470,9 +511,13 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
       "      Salt:                  d00df00d\n",
       info);
 
-  EXPECT_COMMAND(0, "mv %s %s.sparse", partition_path.value().c_str(),
+  EXPECT_COMMAND(0,
+                 "mv %s %s.sparse",
+                 partition_path.value().c_str(),
                  partition_path.value().c_str());
-  EXPECT_COMMAND(0, "simg2img %s.sparse %s", partition_path.value().c_str(),
+  EXPECT_COMMAND(0,
+                 "simg2img %s.sparse %s",
+                 partition_path.value().c_str(),
                  partition_path.value().c_str());
   EXPECT_COMMAND(0, "rm -f %s.sparse", partition_path.value().c_str());
 }
@@ -484,17 +529,23 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
   // Generate a 1028 KiB file with known content.
   std::vector<uint8_t> rootfs;
   rootfs.resize(rootfs_size);
-  for (size_t n = 0; n < rootfs_size; n++) rootfs[n] = uint8_t(n);
+  for (size_t n = 0; n < rootfs_size; n++)
+    rootfs[n] = uint8_t(n);
   base::FilePath rootfs_path = testdir_.Append("rootfs.bin");
   EXPECT_EQ(rootfs_size,
-            static_cast<const size_t>(base::WriteFile(
-                rootfs_path, reinterpret_cast<const char*>(rootfs.data()),
-                rootfs.size())));
+            static_cast<const size_t>(
+                base::WriteFile(rootfs_path,
+                                reinterpret_cast<const char*>(rootfs.data()),
+                                rootfs.size())));
 
   if (sparse_image) {
-    EXPECT_COMMAND(0, "mv %s %s.unsparse", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "mv %s %s.unsparse",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
-    EXPECT_COMMAND(0, "img2simg %s.unsparse %s", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "img2simg %s.unsparse %s",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
     EXPECT_COMMAND(0, "rm -f %s.unsparse", rootfs_path.value().c_str());
   }
@@ -506,7 +557,8 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                    "--partition_size %d --partition_name foobar "
                    "--algorithm SHA256_RSA2048 "
                    "--key test/data/testkey_rsa2048.pem",
-                   rootfs_path.value().c_str(), (int)partition_size);
+                   rootfs_path.value().c_str(),
+                   (int)partition_size);
 
     ASSERT_EQ(base::StringPrintf("Footer version:           1.0\n"
                                  "Image size:               1572864 bytes\n"
@@ -520,6 +572,7 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                                  "Auxiliary Block:          768 bytes\n"
                                  "Algorithm:                SHA256_RSA2048\n"
                                  "Rollback Index:           0\n"
+                                 "Flags:                    0\n"
                                  "Descriptors:\n"
                                  "    Hashtree descriptor:\n"
                                  "      Version of dm-verity:  1\n"
@@ -541,9 +594,13 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
   }
 
   if (sparse_image) {
-    EXPECT_COMMAND(0, "mv %s %s.sparse", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "mv %s %s.sparse",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
-    EXPECT_COMMAND(0, "simg2img %s.sparse %s", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "simg2img %s.sparse %s",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
     EXPECT_COMMAND(0, "rm -f %s.sparse", rootfs_path.value().c_str());
   }
@@ -564,7 +621,8 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                  "verify "
                  "%s %s "
                  "e811611467dcd6e8dc4324e45f706c2bdd51db67",
-                 rootfs_path.value().c_str(), rootfs_path.value().c_str());
+                 rootfs_path.value().c_str(),
+                 rootfs_path.value().c_str());
 
   // Now check that we can find the VBMeta block again from the footer.
   std::string part_data;
@@ -572,10 +630,11 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
 
   // Check footer contains correct data.
   AvbFooter f;
-  EXPECT_NE(0, avb_footer_validate_and_byteswap(
-                   reinterpret_cast<const AvbFooter*>(
-                       part_data.data() + part_data.size() - AVB_FOOTER_SIZE),
-                   &f));
+  EXPECT_NE(0,
+            avb_footer_validate_and_byteswap(
+                reinterpret_cast<const AvbFooter*>(
+                    part_data.data() + part_data.size() - AVB_FOOTER_SIZE),
+                &f));
   EXPECT_EQ(
       std::string(reinterpret_cast<const char*>(f.magic), AVB_FOOTER_MAGIC_LEN),
       AVB_FOOTER_MAGIC);
@@ -593,8 +652,8 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
 
   // Collect all descriptors.
   std::vector<const AvbDescriptor*> descriptors;
-  avb_descriptor_foreach(vbmeta_data, f.vbmeta_size, collect_descriptors,
-                         &descriptors);
+  avb_descriptor_foreach(
+      vbmeta_data, f.vbmeta_size, collect_descriptors, &descriptors);
 
   // We should only have a single descriptor and it should be a
   // hashtree descriptor.
@@ -617,8 +676,9 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
   const uint8_t* desc_end = reinterpret_cast<const uint8_t*>(descriptors[0]) +
                             sizeof(AvbHashtreeDescriptor);
   uint64_t o = 0;
-  EXPECT_EQ("foobar", std::string(reinterpret_cast<const char*>(desc_end + o),
-                                  d.partition_name_len));
+  EXPECT_EQ("foobar",
+            std::string(reinterpret_cast<const char*>(desc_end + o),
+                        d.partition_name_len));
   o += d.partition_name_len;
   EXPECT_EQ("d00df00d", mem_to_hexstring(desc_end + o, d.salt_len));
   o += d.salt_len;
@@ -634,35 +694,48 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                  "--generate_dm_verity_cmdline_from_hashtree %s "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem",
-                 vbmeta_dmv_path.value().c_str(), rootfs_path.value().c_str());
+                 vbmeta_dmv_path.value().c_str(),
+                 rootfs_path.value().c_str());
 
   ASSERT_EQ(
       "VBMeta image version:     1.0\n"
       "Header Block:             256 bytes\n"
       "Authentication Block:     576 bytes\n"
-      "Auxiliary Block:          768 bytes\n"
+      "Auxiliary Block:          896 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           0\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 1\n"
       "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 2056 verity 1 "
       "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
       "4096 4096 257 257 sha1 e811611467dcd6e8dc4324e45f706c2bdd51db67 "
-      "d00df00d 1 ignore_zero_blocks\"'\n",
+      "d00df00d 1 ignore_zero_blocks\" root=0xfd00 "
+      "androidboot.vbmeta.device=PARTUUID=$(ANDROID_VBMETA_PARTUUID)'\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 2\n"
+      "      Kernel Cmdline:        "
+      "'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'\n",
       InfoImage(vbmeta_dmv_path));
 
   // Check that the footer is correctly erased and the hashtree
   // remains - see above for why the constant 1069056 is used.
-  EXPECT_COMMAND(0, "./avbtool erase_footer --image %s --keep_hashtree",
+  EXPECT_COMMAND(0,
+                 "./avbtool erase_footer --image %s --keep_hashtree",
                  rootfs_path.value().c_str());
   int64_t erased_footer_file_size;
   ASSERT_TRUE(base::GetFileSize(rootfs_path, &erased_footer_file_size));
   EXPECT_EQ(static_cast<size_t>(erased_footer_file_size), 1069056UL);
 }
 
-TEST_F(AvbToolTest, AddHashtreeFooter) { AddHashtreeFooterTest(false); }
+TEST_F(AvbToolTest, AddHashtreeFooter) {
+  AddHashtreeFooterTest(false);
+}
 
-TEST_F(AvbToolTest, AddHashtreeFooterSparse) { AddHashtreeFooterTest(true); }
+TEST_F(AvbToolTest, AddHashtreeFooterSparse) {
+  AddHashtreeFooterTest(true);
+}
 
 void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
   const size_t rootfs_size = 1028 * 1024;
@@ -671,17 +744,23 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
   // Generate a 1028 KiB file with known content.
   std::vector<uint8_t> rootfs;
   rootfs.resize(rootfs_size);
-  for (size_t n = 0; n < rootfs_size; n++) rootfs[n] = uint8_t(n);
+  for (size_t n = 0; n < rootfs_size; n++)
+    rootfs[n] = uint8_t(n);
   base::FilePath rootfs_path = testdir_.Append("rootfs.bin");
   EXPECT_EQ(rootfs_size,
-            static_cast<const size_t>(base::WriteFile(
-                rootfs_path, reinterpret_cast<const char*>(rootfs.data()),
-                rootfs.size())));
+            static_cast<const size_t>(
+                base::WriteFile(rootfs_path,
+                                reinterpret_cast<const char*>(rootfs.data()),
+                                rootfs.size())));
 
   if (sparse_image) {
-    EXPECT_COMMAND(0, "mv %s %s.unsparse", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "mv %s %s.unsparse",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
-    EXPECT_COMMAND(0, "img2simg %s.unsparse %s", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "img2simg %s.unsparse %s",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
     EXPECT_COMMAND(0, "rm -f %s.unsparse", rootfs_path.value().c_str());
   }
@@ -694,7 +773,8 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
                    "--generate_fec "
                    "--algorithm SHA256_RSA2048 "
                    "--key test/data/testkey_rsa2048.pem",
-                   rootfs_path.value().c_str(), (int)partition_size);
+                   rootfs_path.value().c_str(),
+                   (int)partition_size);
 
     ASSERT_EQ(base::StringPrintf("Footer version:           1.0\n"
                                  "Image size:               1572864 bytes\n"
@@ -708,6 +788,7 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
                                  "Auxiliary Block:          768 bytes\n"
                                  "Algorithm:                SHA256_RSA2048\n"
                                  "Rollback Index:           0\n"
+                                 "Flags:                    0\n"
                                  "Descriptors:\n"
                                  "    Hashtree descriptor:\n"
                                  "      Version of dm-verity:  1\n"
@@ -729,9 +810,13 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
   }
 
   if (sparse_image) {
-    EXPECT_COMMAND(0, "mv %s %s.sparse", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "mv %s %s.sparse",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
-    EXPECT_COMMAND(0, "simg2img %s.sparse %s", rootfs_path.value().c_str(),
+    EXPECT_COMMAND(0,
+                   "simg2img %s.sparse %s",
+                   rootfs_path.value().c_str(),
                    rootfs_path.value().c_str());
     EXPECT_COMMAND(0, "rm -f %s.sparse", rootfs_path.value().c_str());
   }
@@ -744,10 +829,11 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
 
   // Check footer contains correct data.
   AvbFooter f;
-  EXPECT_NE(0, avb_footer_validate_and_byteswap(
-                   reinterpret_cast<const AvbFooter*>(
-                       part_data.data() + part_data.size() - AVB_FOOTER_SIZE),
-                   &f));
+  EXPECT_NE(0,
+            avb_footer_validate_and_byteswap(
+                reinterpret_cast<const AvbFooter*>(
+                    part_data.data() + part_data.size() - AVB_FOOTER_SIZE),
+                &f));
   EXPECT_EQ(
       std::string(reinterpret_cast<const char*>(f.magic), AVB_FOOTER_MAGIC_LEN),
       AVB_FOOTER_MAGIC);
@@ -765,8 +851,8 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
 
   // Collect all descriptors.
   std::vector<const AvbDescriptor*> descriptors;
-  avb_descriptor_foreach(vbmeta_data, f.vbmeta_size, collect_descriptors,
-                         &descriptors);
+  avb_descriptor_foreach(
+      vbmeta_data, f.vbmeta_size, collect_descriptors, &descriptors);
 
   // We should only have a single descriptor and it should be a
   // hashtree descriptor.
@@ -791,8 +877,9 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
   const uint8_t* desc_end = reinterpret_cast<const uint8_t*>(descriptors[0]) +
                             sizeof(AvbHashtreeDescriptor);
   uint64_t o = 0;
-  EXPECT_EQ("foobar", std::string(reinterpret_cast<const char*>(desc_end + o),
-                                  d.partition_name_len));
+  EXPECT_EQ("foobar",
+            std::string(reinterpret_cast<const char*>(desc_end + o),
+                        d.partition_name_len));
   o += d.partition_name_len;
   EXPECT_EQ("d00df00d", mem_to_hexstring(desc_end + o, d.salt_len));
   o += d.salt_len;
@@ -808,35 +895,46 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
                  "--generate_dm_verity_cmdline_from_hashtree %s "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem",
-                 vbmeta_dmv_path.value().c_str(), rootfs_path.value().c_str());
+                 vbmeta_dmv_path.value().c_str(),
+                 rootfs_path.value().c_str());
 
   ASSERT_EQ(
       "VBMeta image version:     1.0\n"
       "Header Block:             256 bytes\n"
       "Authentication Block:     576 bytes\n"
-      "Auxiliary Block:          896 bytes\n"
+      "Auxiliary Block:          1024 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           0\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 1\n"
       "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 2056 verity 1 "
       "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
       "4096 4096 257 257 sha1 e811611467dcd6e8dc4324e45f706c2bdd51db67 "
       "d00df00d 9 ignore_zero_blocks use_fec_from_device "
       "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) fec_roots 2 fec_blocks 261 "
-      "fec_start 261\"'\n",
+      "fec_start 261\" root=0xfd00 "
+      "androidboot.vbmeta.device=PARTUUID=$(ANDROID_VBMETA_PARTUUID)'\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 2\n"
+      "      Kernel Cmdline:        "
+      "'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'\n",
       InfoImage(vbmeta_dmv_path));
 
   // Check that the footer is correctly erased and the hashtree
   // remains - see above for why the constant 1069056 is used.
-  EXPECT_COMMAND(0, "./avbtool erase_footer --image %s --keep_hashtree",
+  EXPECT_COMMAND(0,
+                 "./avbtool erase_footer --image %s --keep_hashtree",
                  rootfs_path.value().c_str());
   int64_t erased_footer_file_size;
   ASSERT_TRUE(base::GetFileSize(rootfs_path, &erased_footer_file_size));
   EXPECT_EQ(static_cast<size_t>(erased_footer_file_size), 1069056UL);
 }
 
-TEST_F(AvbToolTest, AddHashtreeFooterFEC) { AddHashtreeFooterFECTest(false); }
+TEST_F(AvbToolTest, AddHashtreeFooterFEC) {
+  AddHashtreeFooterFECTest(false);
+}
 
 TEST_F(AvbToolTest, AddHashtreeFooterFECSparse) {
   AddHashtreeFooterFECTest(true);
@@ -849,7 +947,8 @@ TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSize) {
   EXPECT_COMMAND(0,
                  "./avbtool add_hashtree_footer "
                  "--partition_size %zd --calc_max_image_size > %s",
-                 partition_size, output_path.value().c_str());
+                 partition_size,
+                 output_path.value().c_str());
   std::string max_image_size_data;
   EXPECT_TRUE(base::ReadFileToString(output_path, &max_image_size_data));
   EXPECT_EQ("10330112\n", max_image_size_data);
@@ -870,7 +969,8 @@ TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSize) {
                  " --salt deadbeef"
                  " --algorithm SHA512_RSA4096 "
                  " --key test/data/testkey_rsa4096.pem",
-                 system_path.value().c_str(), partition_size);
+                 system_path.value().c_str(),
+                 partition_size);
 }
 
 TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSizeWithFEC) {
@@ -881,7 +981,8 @@ TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSizeWithFEC) {
                  "./avbtool add_hashtree_footer "
                  "--partition_size %zd --generate_fec "
                  "--calc_max_image_size > %s",
-                 partition_size, output_path.value().c_str());
+                 partition_size,
+                 output_path.value().c_str());
   std::string max_image_size_data;
   EXPECT_TRUE(base::ReadFileToString(output_path, &max_image_size_data));
   EXPECT_EQ("10235904\n", max_image_size_data);
@@ -903,7 +1004,8 @@ TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSizeWithFEC) {
                  " --generate_fec "
                  " --algorithm SHA512_RSA4096 "
                  " --key test/data/testkey_rsa4096.pem",
-                 system_path.value().c_str(), partition_size);
+                 system_path.value().c_str(),
+                 partition_size);
 }
 
 TEST_F(AvbToolTest, KernelCmdlineDescriptor) {
@@ -926,10 +1028,13 @@ TEST_F(AvbToolTest, KernelCmdlineDescriptor) {
       "Auxiliary Block:          640 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           0\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
       "      Kernel Cmdline:        'foo bar baz'\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
       "      Kernel Cmdline:        'second cmdline'\n",
       InfoImage(vbmeta_path));
 
@@ -945,8 +1050,8 @@ TEST_F(AvbToolTest, KernelCmdlineDescriptor) {
 
   // Collect all descriptors.
   std::vector<const AvbDescriptor*> descriptors;
-  avb_descriptor_foreach(vbmeta_data, vbmeta_size, collect_descriptors,
-                         &descriptors);
+  avb_descriptor_foreach(
+      vbmeta_data, vbmeta_size, collect_descriptors, &descriptors);
 
   // We should have two descriptors - check them.
   EXPECT_EQ(2UL, descriptors.size());
@@ -1000,7 +1105,8 @@ TEST_F(AvbToolTest, IncludeDescriptor) {
                  "--prop name4:value4 "
                  "--include_descriptors_from_image %s "
                  "--include_descriptors_from_image %s ",
-                 vbmeta3_path.value().c_str(), vbmeta1_path.value().c_str(),
+                 vbmeta3_path.value().c_str(),
+                 vbmeta1_path.value().c_str(),
                  vbmeta2_path.value().c_str());
 
   ASSERT_EQ(
@@ -1010,10 +1116,12 @@ TEST_F(AvbToolTest, IncludeDescriptor) {
       "Auxiliary Block:          256 bytes\n"
       "Algorithm:                NONE\n"
       "Rollback Index:           0\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Prop: name4 -> 'value4'\n"
       "    Prop: name -> 'value'\n"
       "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
       "      Kernel Cmdline:        'something'\n"
       "    Prop: name2 -> 'value2'\n"
       "    Prop: name3 -> 'value3'\n",
@@ -1037,7 +1145,8 @@ TEST_F(AvbToolTest, ChainedPartition) {
       "--output %s "
       "--chain_partition system:1:%s "
       "--algorithm SHA256_RSA2048 --key test/data/testkey_rsa2048.pem",
-      vbmeta_path.value().c_str(), pk_path.value().c_str());
+      vbmeta_path.value().c_str(),
+      pk_path.value().c_str());
 
   ASSERT_EQ(
       "VBMeta image version:     1.0\n"
@@ -1046,11 +1155,13 @@ TEST_F(AvbToolTest, ChainedPartition) {
       "Auxiliary Block:          1152 bytes\n"
       "Algorithm:                SHA256_RSA2048\n"
       "Rollback Index:           0\n"
+      "Flags:                    0\n"
       "Descriptors:\n"
       "    Chain Partition descriptor:\n"
-      "      Partition Name:        system\n"
-      "      Rollback Index Slot:   1\n"
-      "      Public key (sha1):     cdbb77177f731920bbe0a0f94f84d9038ae0617d\n",
+      "      Partition Name:          system\n"
+      "      Rollback Index Location: 1\n"
+      "      Public key (sha1):       "
+      "cdbb77177f731920bbe0a0f94f84d9038ae0617d\n",
       InfoImage(vbmeta_path));
 
   // Now check the VBMeta image.
@@ -1065,8 +1176,8 @@ TEST_F(AvbToolTest, ChainedPartition) {
 
   // Collect all descriptors.
   std::vector<const AvbDescriptor*> descriptors;
-  avb_descriptor_foreach(vbmeta_data, vbmeta_size, collect_descriptors,
-                         &descriptors);
+  avb_descriptor_foreach(
+      vbmeta_data, vbmeta_size, collect_descriptors, &descriptors);
 
   // We should have one descriptor - check it.
   EXPECT_EQ(1UL, descriptors.size());
@@ -1085,10 +1196,44 @@ TEST_F(AvbToolTest, ChainedPartition) {
   const uint8_t* desc_end = reinterpret_cast<const uint8_t*>(descriptors[0]) +
                             sizeof(AvbChainPartitionDescriptor);
   uint64_t o = 0;
-  EXPECT_EQ("system", std::string(reinterpret_cast<const char*>(desc_end + o),
-                                  d.partition_name_len));
+  EXPECT_EQ("system",
+            std::string(reinterpret_cast<const char*>(desc_end + o),
+                        d.partition_name_len));
   o += d.partition_name_len;
-  EXPECT_EQ(pk_data, std::string(reinterpret_cast<const char*>(descriptors[0]) +
-                                     sizeof(AvbChainPartitionDescriptor) + o,
-                                 d.public_key_len));
+  EXPECT_EQ(pk_data,
+            std::string(reinterpret_cast<const char*>(descriptors[0]) +
+                            sizeof(AvbChainPartitionDescriptor) + o,
+                        d.public_key_len));
 }
+
+TEST_F(AvbToolTest, SigningHelperBasic) {
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta.bin");
+  base::FilePath signing_helper_test_path =
+      testdir_.Append("signing_helper_test");
+  EXPECT_COMMAND(
+      0,
+      "SIGNING_HELPER_TEST=\"%s\" ./avbtool make_vbmeta_image "
+      "--output %s "
+      "--algorithm SHA256_RSA2048 --key test/data/testkey_rsa2048.pem "
+      "--signing_helper test/avbtool_signing_helper_test.py",
+      signing_helper_test_path.value().c_str(),
+      vbmeta_path.value().c_str());
+
+  // Now check the value in test file.
+  std::string value;
+  ASSERT_TRUE(base::ReadFileToString(signing_helper_test_path, &value));
+  EXPECT_EQ("DONE", value);
+}
+
+TEST_F(AvbToolTest, SigningHelperReturnError) {
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta.bin");
+  EXPECT_COMMAND(
+      1,
+      "./avbtool make_vbmeta_image "
+      "--output %s "
+      "--algorithm SHA256_RSA2048 --key test/data/testkey_rsa2048.pem "
+      "--signing_helper test/avbtool_signing_helper_test.py",
+      vbmeta_path.value().c_str());
+}
+
+}  // namespace avb

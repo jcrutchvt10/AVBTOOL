@@ -23,7 +23,8 @@
  */
 
 #if !defined(AVB_INSIDE_LIBAVB_AB_H) && !defined(AVB_COMPILATION)
-#error "Never include this file directly, include libavb/libavb_ab.h instead."
+#error \
+    "Never include this file directly, include libavb_ab/libavb_ab.h instead."
 #endif
 
 #ifndef AVB_AB_FLOW_H_
@@ -163,9 +164,9 @@ const char* avb_ab_flow_result_to_string(AvbABFlowResult result);
  * AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS is returned.
  *
  * 4. For each bootable slot, the Stored Rollback Indexes are updated
- * such that for each rollback index slot, the Stored Rollback Index
- * is the largest number smaller than or equal to the Rollback Index
- * of each slot.
+ * such that for each rollback index location, the Stored Rollback
+ * Index is the largest number smaller than or equal to the Rollback
+ * Index of each slot.
  *
  * 5. The bootable slot with the highest priority is selected and
  * returned in |out_data|. If this slot is already marked as

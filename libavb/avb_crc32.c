@@ -103,7 +103,8 @@ static uint32_t crc32(uint32_t crc_in, const uint8_t* buf, int size) {
   uint32_t crc;
 
   crc = crc_in ^ ~0U;
-  while (size--) crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+  while (size--)
+    crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
   return crc ^ ~0U;
 }
 

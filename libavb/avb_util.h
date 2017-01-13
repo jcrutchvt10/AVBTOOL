@@ -70,8 +70,8 @@ extern "C" {
  *
  * This has no effect unless AVB_ENABLE_DEBUG is defined.
  */
-#define avb_assert_word_aligned(addr) \
-  avb_assert((((uintptr_t)addr) & (AVB_WORD_ALIGNMENT_SIZE - 1)) == 0)
+#define avb_assert_aligned(addr) \
+  avb_assert((((uintptr_t)addr) & (AVB_ALIGNMENT_SIZE - 1)) == 0)
 
 #ifdef AVB_ENABLE_DEBUG
 /* Print functions, used for diagnostics.
@@ -144,7 +144,8 @@ uint64_t avb_htobe64(uint64_t in) AVB_ATTR_WARN_UNUSED_RESULT;
  * Note that unlike avb_memcmp(), this only indicates inequality, not
  * whether |s1| is less than or greater than |s2|.
  */
-int avb_safe_memcmp(const void* s1, const void* s2,
+int avb_safe_memcmp(const void* s1,
+                    const void* s2,
                     size_t n) AVB_ATTR_WARN_UNUSED_RESULT;
 
 /* Adds |value_to_add| to |value| with overflow protection.
@@ -163,7 +164,8 @@ bool avb_safe_add_to(uint64_t* value,
  *
  * Returns false if the addition overflows, true otherwise.
  */
-bool avb_safe_add(uint64_t* out_result, uint64_t a,
+bool avb_safe_add(uint64_t* out_result,
+                  uint64_t a,
                   uint64_t b) AVB_ATTR_WARN_UNUSED_RESULT;
 
 /* Checks if |num_bytes| data at |data| is a valid UTF-8
@@ -180,8 +182,12 @@ bool avb_validate_utf8(const uint8_t* data,
  *
  * Returns true if the operation succeeds, false otherwise.
  */
-bool avb_str_concat(char* buf, size_t buf_size, const char* str1,
-                    size_t str1_len, const char* str2, size_t str2_len);
+bool avb_str_concat(char* buf,
+                    size_t buf_size,
+                    const char* str1,
+                    size_t str1_len,
+                    const char* str2,
+                    size_t str2_len);
 
 /* Like avb_malloc_() but prints a error using avb_error() if memory
  * allocation fails.
@@ -212,14 +218,16 @@ const char* avb_strstr(const char* haystack,
  * Returns NULL if not found, otherwise points into |strings| for the
  * first occurrence of |str|.
  */
-const char* avb_strv_find_str(const char* const* strings, const char* str,
+const char* avb_strv_find_str(const char* const* strings,
+                              const char* str,
                               size_t str_size);
 
 /* Replaces all occurrences of |search| with |replace| in |str|.
  *
  * Returns a newly allocated string or NULL if out of memory.
  */
-char* avb_replace(const char* str, const char* search,
+char* avb_replace(const char* str,
+                  const char* search,
                   const char* replace) AVB_ATTR_WARN_UNUSED_RESULT;
 
 /* Calculates the CRC-32 for data in |buf| of size |buf_size|. */

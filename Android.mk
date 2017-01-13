@@ -150,6 +150,7 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_SRC_FILES := \
     test/avb_ab_flow_unittest.cc \
     test/avb_slot_verify_unittest.cc \
+    test/avb_unittest_util.cc \
     test/avb_util_unittest.cc \
     test/avb_vbmeta_image_unittest.cc \
     test/avbtool_unittest.cc \

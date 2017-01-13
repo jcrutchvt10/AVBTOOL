@@ -81,14 +81,17 @@ void avb_ab_data_init(AvbABData* data) {
 #define AB_METADATA_MISC_PARTITION_OFFSET 2048
 
 AvbIOResult avb_ab_data_read(AvbABOps* ab_ops, AvbABData* data) {
-  AvbOps* ops = &(ab_ops->ops);
+  AvbOps* ops = ab_ops->ops;
   AvbABData serialized;
   AvbIOResult io_ret;
   size_t num_bytes_read;
 
-  io_ret =
-      ops->read_from_partition(ops, "misc", AB_METADATA_MISC_PARTITION_OFFSET,
-                               sizeof(AvbABData), &serialized, &num_bytes_read);
+  io_ret = ops->read_from_partition(ops,
+                                    "misc",
+                                    AB_METADATA_MISC_PARTITION_OFFSET,
+                                    sizeof(AvbABData),
+                                    &serialized,
+                                    &num_bytes_read);
   if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
     return AVB_IO_RESULT_ERROR_OOM;
   } else if (io_ret != AVB_IO_RESULT_OK ||
@@ -109,14 +112,16 @@ AvbIOResult avb_ab_data_read(AvbABOps* ab_ops, AvbABData* data) {
 }
 
 AvbIOResult avb_ab_data_write(AvbABOps* ab_ops, const AvbABData* data) {
-  AvbOps* ops = &(ab_ops->ops);
+  AvbOps* ops = ab_ops->ops;
   AvbABData serialized;
   AvbIOResult io_ret;
 
   avb_ab_data_update_crc_and_byteswap(data, &serialized);
-  io_ret =
-      ops->write_to_partition(ops, "misc", AB_METADATA_MISC_PARTITION_OFFSET,
-                              sizeof(AvbABData), &serialized);
+  io_ret = ops->write_to_partition(ops,
+                                   "misc",
+                                   AB_METADATA_MISC_PARTITION_OFFSET,
+                                   sizeof(AvbABData),
+                                   &serialized);
   if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
     return AVB_IO_RESULT_ERROR_OOM;
   } else if (io_ret != AVB_IO_RESULT_OK) {
@@ -163,7 +168,8 @@ static const char* slot_suffixes[2] = {"_a", "_b"};
 /* Helper function to load metadata - returns AVB_IO_RESULT_OK on
  * success, error code otherwise.
  */
-static AvbIOResult load_metadata(AvbABOps* ab_ops, AvbABData* ab_data,
+static AvbIOResult load_metadata(AvbABOps* ab_ops,
+                                 AvbABData* ab_data,
                                  AvbABData* ab_data_orig) {
   AvbIOResult io_ret;
 
@@ -200,7 +206,7 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
                             const char* const* requested_partitions,
                             bool allow_verification_error,
                             AvbSlotVerifyData** out_data) {
-  AvbOps* ops = &(ab_ops->ops);
+  AvbOps* ops = ab_ops->ops;
   AvbSlotVerifyData* slot_data[2] = {NULL, NULL};
   AvbSlotVerifyData* data = NULL;
   AvbABFlowResult ret;
@@ -224,9 +230,11 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
       AvbSlotVerifyResult verify_result;
       bool set_slot_unbootable = false;
 
-      verify_result =
-          avb_slot_verify(ops, requested_partitions, slot_suffixes[n],
-                          allow_verification_error, &slot_data[n]);
+      verify_result = avb_slot_verify(ops,
+                                      requested_partitions,
+                                      slot_suffixes[n],
+                                      allow_verification_error,
+                                      &slot_data[n]);
       switch (verify_result) {
         case AVB_SLOT_VERIFY_RESULT_ERROR_OOM:
           ret = AVB_AB_FLOW_RESULT_ERROR_OOM;
@@ -250,11 +258,13 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
         case AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED:
           if (allow_verification_error) {
             /* Do nothing since we allow this. */
-            avb_debugv("Allowing slot ", slot_suffixes[n],
+            avb_debugv("Allowing slot ",
+                       slot_suffixes[n],
                        " which verified "
                        "with result ",
                        avb_slot_verify_result_to_string(verify_result),
-                       " because |allow_verification_error| is true.\n", NULL);
+                       " because |allow_verification_error| is true.\n",
+                       NULL);
             saw_and_allowed_verification_error = true;
           } else {
             set_slot_unbootable = true;
@@ -263,9 +273,12 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
       }
 
       if (set_slot_unbootable) {
-        avb_errorv("Error verifying slot ", slot_suffixes[n], " with result ",
+        avb_errorv("Error verifying slot ",
+                   slot_suffixes[n],
+                   " with result ",
                    avb_slot_verify_result_to_string(verify_result),
-                   " - setting unbootable.\n", NULL);
+                   " - setting unbootable.\n",
+                   NULL);
         slot_set_unbootable(&ab_data.slots[n]);
       }
     }
@@ -291,9 +304,9 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
 
   /* Update stored rollback index such that the stored rollback index
    * is the largest value supporting all currently bootable slots. Do
-   * this for every rollback index slot.
+   * this for every rollback index location.
    */
-  for (n = 0; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_SLOTS; n++) {
+  for (n = 0; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
     uint64_t rollback_index_value = 0;
 
     if (slot_data[0] != NULL && slot_data[1] != NULL) {
