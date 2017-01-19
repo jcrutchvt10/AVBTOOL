@@ -691,7 +691,7 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
   EXPECT_COMMAND(0,
                  "./avbtool make_vbmeta_image "
                  "--output %s "
-                 "--generate_dm_verity_cmdline_from_hashtree %s "
+                 "--setup_rootfs_from_kernel %s "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem",
                  vbmeta_dmv_path.value().c_str(),
@@ -891,7 +891,7 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
   EXPECT_COMMAND(0,
                  "./avbtool make_vbmeta_image "
                  "--output %s "
-                 "--generate_dm_verity_cmdline_from_hashtree %s "
+                 "--setup_rootfs_from_kernel %s "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem",
                  vbmeta_dmv_path.value().c_str(),

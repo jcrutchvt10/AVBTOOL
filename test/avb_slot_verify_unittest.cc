@@ -1154,7 +1154,7 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
       "SHA256_RSA2048",
       4,
       base::FilePath("test/data/testkey_rsa2048.pem"),
-      base::StringPrintf("--generate_dm_verity_cmdline_from_hashtree %s "
+      base::StringPrintf("--setup_rootfs_from_kernel %s "
                          "--kernel_cmdline should_be_in_both=1 "
                          "--algorithm SHA256_RSA2048 "
                          "--flags %d ",

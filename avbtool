@@ -1811,7 +1811,7 @@ class Avb(object):
   def make_vbmeta_image(self, output, chain_partitions, algorithm_name,
                         key_path, public_key_metadata_path, rollback_index,
                         flags, props, props_from_file, kernel_cmdlines,
-                        generate_dm_verity_cmdline_from_hashtree,
+                        setup_rootfs_from_kernel,
                         include_descriptors_from_image, signing_helper):
     """Implements the 'make_vbmeta_image' command.
 
@@ -1826,7 +1826,7 @@ class Avb(object):
       props: Properties to insert (list of strings of the form 'key:value').
       props_from_file: Properties to insert (list of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
-      generate_dm_verity_cmdline_from_hashtree: None or file to generate from.
+      setup_rootfs_from_kernel: None or file to generate from.
       include_descriptors_from_image: List of file objects with descriptors.
       signing_helper: Program which signs a hash and return signature.
 
@@ -1854,7 +1854,7 @@ class Avb(object):
     vbmeta_blob = self._generate_vbmeta_blob(
         algorithm_name, key_path, public_key_metadata_path, descriptors,
         rollback_index, flags, props, props_from_file, kernel_cmdlines,
-        generate_dm_verity_cmdline_from_hashtree,
+        setup_rootfs_from_kernel,
         include_descriptors_from_image, signing_helper)
 
     # Write entire vbmeta blob (header, authentication, auxiliary).
@@ -1865,7 +1865,7 @@ class Avb(object):
                             public_key_metadata_path, descriptors,
                             rollback_index, flags, props, props_from_file,
                             kernel_cmdlines,
-                            generate_dm_verity_cmdline_from_hashtree,
+                            setup_rootfs_from_kernel,
                             include_descriptors_from_image, signing_helper):
     """Generates a VBMeta blob.
 
@@ -1887,7 +1887,7 @@ class Avb(object):
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
-      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+      setup_rootfs_from_kernel: None or file to generate
         dm-verity kernel cmdline from.
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
@@ -1936,9 +1936,9 @@ class Avb(object):
         encoded_descriptors.extend(desc.encode())
 
     # Add AvbKernelCmdline descriptor for dm-verity, if requested.
-    if generate_dm_verity_cmdline_from_hashtree:
+    if setup_rootfs_from_kernel:
       image_handler = ImageHandler(
-          generate_dm_verity_cmdline_from_hashtree.name)
+          setup_rootfs_from_kernel.name)
       cmdline_desc = self._get_cmdline_descriptors_for_dm_verity(image_handler)
       encoded_descriptors.extend(cmdline_desc[0].encode())
       encoded_descriptors.extend(cmdline_desc[1].encode())
@@ -2073,7 +2073,7 @@ class Avb(object):
                       hash_algorithm, salt, algorithm_name, key_path,
                       public_key_metadata_path, rollback_index, props,
                       props_from_file, kernel_cmdlines,
-                      generate_dm_verity_cmdline_from_hashtree,
+                      setup_rootfs_from_kernel,
                       include_descriptors_from_image, signing_helper):
     """Implementation of the add_hash_footer on unsparse images.
 
@@ -2090,7 +2090,7 @@ class Avb(object):
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
-      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+      setup_rootfs_from_kernel: None or file to generate
         dm-verity kernel cmdline from.
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
@@ -2168,7 +2168,7 @@ class Avb(object):
       vbmeta_blob = self._generate_vbmeta_blob(
           algorithm_name, key_path, public_key_metadata_path, [h_desc],
           rollback_index, flags, props, props_from_file, kernel_cmdlines,
-          generate_dm_verity_cmdline_from_hashtree,
+          setup_rootfs_from_kernel,
           include_descriptors_from_image, signing_helper)
 
       # If the image isn't sparse, its size might not be a multiple of
@@ -2216,7 +2216,7 @@ class Avb(object):
                           block_size, salt, algorithm_name, key_path,
                           public_key_metadata_path, rollback_index,
                           props, props_from_file, kernel_cmdlines,
-                          generate_dm_verity_cmdline_from_hashtree,
+                          setup_rootfs_from_kernel,
                           include_descriptors_from_image,
                           calc_max_image_size, signing_helper):
     """Implements the 'add_hashtree_footer' command.
@@ -2240,7 +2240,7 @@ class Avb(object):
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
-      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+      setup_rootfs_from_kernel: None or file to generate
         dm-verity kernel cmdline from.
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
@@ -2383,7 +2383,7 @@ class Avb(object):
       vbmeta_blob = self._generate_vbmeta_blob(
           algorithm_name, key_path, public_key_metadata_path, [ht_desc],
           rollback_index, flags, props, props_from_file, kernel_cmdlines,
-          generate_dm_verity_cmdline_from_hashtree,
+          setup_rootfs_from_kernel,
           include_descriptors_from_image, signing_helper)
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
                         len(vbmeta_blob))
@@ -2616,9 +2616,13 @@ class AvbTool(object):
                             help='Add kernel cmdline',
                             metavar='CMDLINE',
                             action='append')
-    sub_parser.add_argument('--generate_dm_verity_cmdline_from_hashtree',
+    # TODO(zeuthen): the --setup_rootfs_from_kernel option used to be called
+    # --generate_dm_verity_cmdline_from_hashtree. Remove support for the latter
+    # at some future point.
+    sub_parser.add_argument('--setup_rootfs_from_kernel',
+                            '--generate_dm_verity_cmdline_from_hashtree',
                             metavar='IMAGE',
-                            help='Generate kernel cmdline for dm-verity',
+                            help='Adds kernel cmdline to set up IMAGE',
                             type=argparse.FileType('rb'))
     sub_parser.add_argument('--include_descriptors_from_image',
                             help='Include descriptors from image',
@@ -2787,7 +2791,7 @@ class AvbTool(object):
                                args.public_key_metadata, args.rollback_index,
                                args.flags, args.prop, args.prop_from_file,
                                args.kernel_cmdline,
-                               args.generate_dm_verity_cmdline_from_hashtree,
+                               args.setup_rootfs_from_kernel,
                                args.include_descriptors_from_image, args.signing_helper)
 
   def add_hash_footer(self, args):
@@ -2798,7 +2802,7 @@ class AvbTool(object):
                              args.public_key_metadata, args.rollback_index,
                              args.prop, args.prop_from_file,
                              args.kernel_cmdline,
-                             args.generate_dm_verity_cmdline_from_hashtree,
+                             args.setup_rootfs_from_kernel,
                              args.include_descriptors_from_image, args.signing_helper)
 
   def add_hashtree_footer(self, args):
@@ -2813,7 +2817,7 @@ class AvbTool(object):
                                  args.rollback_index, args.prop,
                                  args.prop_from_file,
                                  args.kernel_cmdline,
-                                 args.generate_dm_verity_cmdline_from_hashtree,
+                                 args.setup_rootfs_from_kernel,
                                  args.include_descriptors_from_image,
                                  args.calc_max_image_size, args.signing_helper)
 
