@@ -39,7 +39,7 @@ import Crypto.PublicKey.RSA
 # Keep in sync with avb_vbmeta_header.h.
 AVB_VERSION_MAJOR = 1
 AVB_VERSION_MINOR = 0
-
+AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED = 1
 
 class AvbError(Exception):
   """Application-specific errors.
@@ -2669,6 +2669,9 @@ class AvbTool(object):
                             help='VBMeta flags',
                             type=parse_number,
                             default=0)
+    sub_parser.add_argument('--set_hashtree_disabled_flag',
+                            help='Set the HASHTREE_DISABLED flag',
+                            action='store_true')
     sub_parser.set_defaults(func=self.make_vbmeta_image)
 
     sub_parser = subparsers.add_parser('add_hash_footer',
@@ -2786,6 +2789,8 @@ class AvbTool(object):
 
   def make_vbmeta_image(self, args):
     """Implements the 'make_vbmeta_image' sub-command."""
+    if args.set_hashtree_disabled_flag:
+      args.flags |= AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED
     self.avb.make_vbmeta_image(args.output, args.chain_partition,
                                args.algorithm, args.key,
                                args.public_key_metadata, args.rollback_index,
