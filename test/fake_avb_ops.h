@@ -30,6 +30,7 @@
 #include <string>
 
 #include <libavb_ab/libavb_ab.h>
+#include <libavb_atx/libavb_atx.h>
 
 namespace avb {
 
@@ -72,6 +73,12 @@ class FakeAvbOpsDelegate {
                                                     const char* partition,
                                                     char* guid_buf,
                                                     size_t guid_buf_size) = 0;
+
+  virtual AvbIOResult read_permanent_attributes(
+      AvbAtxPermanentAttributes* attributes) = 0;
+
+  virtual AvbIOResult read_permanent_attributes_hash(
+      uint8_t hash[AVB_SHA256_DIGEST_SIZE]) = 0;
 };
 
 // Provides fake implementations of AVB ops. All instances of this class must be
@@ -94,6 +101,10 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
 
   AvbABOps* avb_ab_ops() {
     return &avb_ab_ops_;
+  }
+
+  AvbAtxOps* avb_atx_ops() {
+    return &avb_atx_ops_;
   }
 
   FakeAvbOpsDelegate* delegate() {
@@ -131,6 +142,14 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
     stored_is_device_unlocked_ = stored_is_device_unlocked;
   }
 
+  void set_permanent_attributes(const AvbAtxPermanentAttributes& attributes) {
+    permanent_attributes_ = attributes;
+  }
+
+  void set_permanent_attributes_hash(const std::string& hash) {
+    permanent_attributes_hash_ = hash;
+  }
+
   // FakeAvbOpsDelegate methods.
   AvbIOResult read_from_partition(const char* partition,
                                   int64_t offset,
@@ -166,9 +185,16 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
                                             char* guid_buf,
                                             size_t guid_buf_size) override;
 
+  AvbIOResult read_permanent_attributes(
+      AvbAtxPermanentAttributes* attributes) override;
+
+  AvbIOResult read_permanent_attributes_hash(
+      uint8_t hash[AVB_SHA256_DIGEST_SIZE]) override;
+
  private:
   AvbOps avb_ops_;
   AvbABOps avb_ab_ops_;
+  AvbAtxOps avb_atx_ops_;
 
   FakeAvbOpsDelegate* delegate_;
 
@@ -180,6 +206,9 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
   std::map<size_t, uint64_t> stored_rollback_indexes_;
 
   bool stored_is_device_unlocked_;
+
+  AvbAtxPermanentAttributes permanent_attributes_;
+  std::string permanent_attributes_hash_;
 };
 
 }  // namespace avb
