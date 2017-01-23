@@ -162,7 +162,7 @@ LOCAL_STATIC_LIBRARIES := \
     libgtest_host
 LOCAL_SHARED_LIBRARIES := \
     libchrome \
-    libcrypto-host
+    libcrypto
 LOCAL_SRC_FILES := \
     test/avb_ab_flow_unittest.cc \
     test/avb_atx_validate_unittest.cc \
