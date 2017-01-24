@@ -113,6 +113,11 @@ operation (see avb_validate_vbmeta_public_key in avb_ops.h).
 
    Contains unit tests for abvtool, libavb, libavb_ab, and libavb_atx.
 
+ examples/uefi/
+
+   Contains the source-code for a UEFI-based boot-loader utilizing
+   libavb/ and libavb_ab/.
+
 -- AUDIENCE AND PORTABILITY NOTES
 
 This code is intended to be used in bootloaders in devices running
