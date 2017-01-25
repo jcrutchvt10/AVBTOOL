@@ -2028,7 +2028,7 @@ class Avb(object):
     # For the Authentication data block, the hash is first and then
     # the signature.
     h.authentication_data_block_size = round_to_multiple(
-        alg.hash_num_bytes + alg.public_key_num_bytes, 64)
+        alg.hash_num_bytes + alg.signature_num_bytes, 64)
     h.algorithm_type = alg.algorithm_type
     h.hash_offset = 0
     h.hash_size = alg.hash_num_bytes
