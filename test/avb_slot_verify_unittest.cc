@@ -1178,8 +1178,8 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
           "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 2056 verity "
           "1 PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
           "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) 4096 4096 257 257 sha1 "
-          "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 1 "
-          "ignore_zero_blocks\" root=0xfd00'\n"
+          "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 2 "
+          "restart_on_corruption ignore_zero_blocks\" root=0xfd00'\n"
           "    Kernel Cmdline descriptor:\n"
           "      Flags:                 2\n"
           "      Kernel Cmdline:        "
@@ -1210,13 +1210,14 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
         "dm=\"1 vroot none ro 1,0 2056 verity 1 "
         "PARTUUID=1234-fake-guid-for:system_a "
         "PARTUUID=1234-fake-guid-for:system_a 4096 4096 257 257 sha1 "
-        "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 1 "
-        "ignore_zero_blocks\" root=0xfd00 should_be_in_both=1 "
+        "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 2 "
+        "restart_on_corruption ignore_zero_blocks\" root=0xfd00 "
+        "should_be_in_both=1 "
         "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
         "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
         "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1472 "
         "androidboot.vbmeta.digest="
-        "f16e1bbd141bd57b41057e2051393fffc85538d83722f8d11fc0bf96bd279bb9",
+        "32572f7a89fb44cc76e9e3adbc0cb5272d0604578b2179729aa52d2bba4061c3",
         std::string(slot_data->cmdline));
   } else {
     EXPECT_EQ(
@@ -1225,7 +1226,7 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
         "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
         "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1472 "
         "androidboot.vbmeta.digest="
-        "ade42910c6cab6088044e8ad04f52eafa45928184256ff1df0cb0b5da867d6dc",
+        "bb630c27d09e10117092d4444ea57a99bf44101c46cf5424cfb86928a0873249",
         std::string(slot_data->cmdline));
   }
   avb_slot_verify_data_free(slot_data);
