@@ -199,7 +199,7 @@ LOCAL_SRC_FILES := \
 LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
-LOCAL_SHARED_LIBRARIES := libcutils
+LOCAL_SHARED_LIBRARIES := libbase libcutils
 LOCAL_STATIC_LIBRARIES := libfs_mgr libavb
 LOCAL_POST_INSTALL_CMD := \
 	$(hide) mkdir -p $(TARGET_OUT_SHARED_LIBRARIES)/hw && \
