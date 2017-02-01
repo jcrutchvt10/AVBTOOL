@@ -118,6 +118,20 @@ LOCAL_SRC_FILES := \
     libavb_ab/avb_ab_flow.c
 include $(BUILD_HOST_STATIC_LIBRARY)
 
+# Build libavb_atx for the host (for unit tests).
+include $(CLEAR_VARS)
+LOCAL_MODULE := libavb_atx_host
+LOCAL_REQUIRED_MODULES := libavb_host
+LOCAL_MODULE_HOST_OS := linux
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
+LOCAL_MODULE_CLASS := STATIC_LIBRARIES
+LOCAL_CLANG := true
+LOCAL_CFLAGS := $(avb_common_cflags) -fno-stack-protector -DAVB_ENABLE_DEBUG -DAVB_COMPILATION
+LOCAL_LDFLAGS := $(avb_common_ldflags)
+LOCAL_SRC_FILES := \
+    libavb_atx/avb_atx_validate.c
+include $(BUILD_HOST_STATIC_LIBRARY)
+
 include $(CLEAR_VARS)
 LOCAL_MODULE := libavb_host_sysdeps
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
@@ -132,7 +146,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libavb_host_unittest
-LOCAL_REQUIRED_MODULES := simg2img img2simg
+LOCAL_REQUIRED_MODULES := simg2img img2simg avbtool
 LOCAL_MODULE_HOST_OS := linux
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CLANG := true
@@ -143,12 +157,15 @@ LOCAL_STATIC_LIBRARIES := \
     libavb_host \
     libavb_host_sysdeps \
     libavb_ab_host \
+    libavb_atx_host \
     libgmock_host \
     libgtest_host
 LOCAL_SHARED_LIBRARIES := \
-    libchrome
+    libchrome \
+    libcrypto
 LOCAL_SRC_FILES := \
     test/avb_ab_flow_unittest.cc \
+    test/avb_atx_validate_unittest.cc \
     test/avb_slot_verify_unittest.cc \
     test/avb_unittest_util.cc \
     test/avb_util_unittest.cc \
@@ -157,6 +174,18 @@ LOCAL_SRC_FILES := \
     test/fake_avb_ops.cc
 LOCAL_LDLIBS_linux := -lrt
 include $(BUILD_HOST_NATIVE_TEST)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := libavb_host_user_code_test
+LOCAL_MODULE_HOST_OS := linux
+LOCAL_MODULE_CLASS := STATIC_LIBRARIES
+LOCAL_CPP_EXTENSION := .cc
+LOCAL_CLANG := true
+LOCAL_CFLAGS := $(avb_common_cflags)
+LOCAL_CPPFLAGS := $(avb_common_cppflags)
+LOCAL_LDFLAGS := $(avb_common_ldflags)
+LOCAL_SRC_FILES := test/user_code_test.cc
+include $(BUILD_HOST_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := bootctrl.avb
@@ -170,7 +199,7 @@ LOCAL_SRC_FILES := \
 LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
-LOCAL_SHARED_LIBRARIES := libcutils
+LOCAL_SHARED_LIBRARIES := libbase libcutils
 LOCAL_STATIC_LIBRARIES := libfs_mgr libavb
 LOCAL_POST_INSTALL_CMD := \
 	$(hide) mkdir -p $(TARGET_OUT_SHARED_LIBRARIES)/hw && \

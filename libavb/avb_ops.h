@@ -66,6 +66,9 @@ typedef struct AvbOps AvbOps;
 /* Forward-declaration of operations in libavb_ab. */
 struct AvbABOps;
 
+/* Forward-declaration of operations in libavb_atx. */
+struct AvbAtxOps;
+
 /* High-level operations/functions/methods that are platform
  * dependent.
  */
@@ -80,6 +83,11 @@ struct AvbOps {
    * AvbABOps. Otherwise it must be set to NULL.
    */
   struct AvbABOps* ab_ops;
+
+  /* If libavb_atx is used, this should point to the
+   * AvbAtxOps. Otherwise it must be set to NULL.
+   */
+  struct AvbAtxOps* atx_ops;
 
   /* Reads |num_bytes| from offset |offset| from partition with name
    * |partition| (NUL-terminated UTF-8 string). If |offset| is

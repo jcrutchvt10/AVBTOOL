@@ -42,16 +42,8 @@
 extern "C" {
 #endif
 
+#include "avb_crypto.h"
 #include "avb_sysdeps.h"
-
-/* Size of a RSA-2048 signature. */
-#define AVB_RSA2048_NUM_BYTES 256
-
-/* Size of a RSA-4096 signature. */
-#define AVB_RSA4096_NUM_BYTES 512
-
-/* Size of a RSA-8192 signature. */
-#define AVB_RSA8192_NUM_BYTES 1024
 
 /* Using the key given by |key|, verify a RSA signature |sig| of
  * length |sig_num_bytes| against an expected |hash| of length

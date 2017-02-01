@@ -37,6 +37,7 @@
 #include <base/files/file_util.h>
 #include <base/strings/string_util.h>
 #include <base/strings/stringprintf.h>
+#include <openssl/sha.h>
 
 #include "fake_avb_ops.h"
 
@@ -214,6 +215,26 @@ AvbIOResult FakeAvbOps::get_unique_guid_for_partition(AvbOps* ops,
   return AVB_IO_RESULT_OK;
 }
 
+AvbIOResult FakeAvbOps::read_permanent_attributes(
+    AvbAtxPermanentAttributes* attributes) {
+  *attributes = permanent_attributes_;
+  return AVB_IO_RESULT_OK;
+}
+
+AvbIOResult FakeAvbOps::read_permanent_attributes_hash(
+    uint8_t hash[AVB_SHA256_DIGEST_SIZE]) {
+  if (permanent_attributes_hash_.empty()) {
+    SHA256(reinterpret_cast<const unsigned char*>(&permanent_attributes_),
+           sizeof(AvbAtxPermanentAttributes),
+           hash);
+    return AVB_IO_RESULT_OK;
+  }
+  memset(hash, 0, AVB_SHA256_DIGEST_SIZE);
+  permanent_attributes_hash_.copy(reinterpret_cast<char*>(hash),
+                                  AVB_SHA256_DIGEST_SIZE);
+  return AVB_IO_RESULT_OK;
+}
+
 static AvbIOResult my_ops_read_from_partition(AvbOps* ops,
                                               const char* partition,
                                               int64_t offset,
@@ -283,8 +304,23 @@ static AvbIOResult my_ops_get_unique_guid_for_partition(AvbOps* ops,
       ->get_unique_guid_for_partition(ops, partition, guid_buf, guid_buf_size);
 }
 
+static AvbIOResult my_ops_read_permanent_attributes(
+    AvbAtxOps* atx_ops, AvbAtxPermanentAttributes* attributes) {
+  return FakeAvbOps::GetInstanceFromAvbOps(atx_ops->ops)
+      ->delegate()
+      ->read_permanent_attributes(attributes);
+}
+
+static AvbIOResult my_ops_read_permanent_attributes_hash(
+    AvbAtxOps* atx_ops, uint8_t hash[AVB_SHA256_DIGEST_SIZE]) {
+  return FakeAvbOps::GetInstanceFromAvbOps(atx_ops->ops)
+      ->delegate()
+      ->read_permanent_attributes_hash(hash);
+}
+
 FakeAvbOps::FakeAvbOps() {
   avb_ops_.ab_ops = &avb_ab_ops_;
+  avb_ops_.atx_ops = &avb_atx_ops_;
   avb_ops_.user_data = this;
   avb_ops_.read_from_partition = my_ops_read_from_partition;
   avb_ops_.write_to_partition = my_ops_write_to_partition;
@@ -298,6 +334,11 @@ FakeAvbOps::FakeAvbOps() {
   avb_ab_ops_.ops = &avb_ops_;
   avb_ab_ops_.read_ab_metadata = avb_ab_data_read;
   avb_ab_ops_.write_ab_metadata = avb_ab_data_write;
+
+  avb_atx_ops_.ops = &avb_ops_;
+  avb_atx_ops_.read_permanent_attributes = my_ops_read_permanent_attributes;
+  avb_atx_ops_.read_permanent_attributes_hash =
+      my_ops_read_permanent_attributes_hash;
 
   delegate_ = this;
 }

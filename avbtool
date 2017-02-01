@@ -33,13 +33,14 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 import Crypto.PublicKey.RSA
 
 # Keep in sync with avb_vbmeta_header.h.
 AVB_VERSION_MAJOR = 1
 AVB_VERSION_MINOR = 0
-
+AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED = 1
 
 class AvbError(Exception):
   """Application-specific errors.
@@ -371,6 +372,41 @@ def lookup_algorithm_by_type(alg_type):
     if alg_data.algorithm_type == alg_type:
       return (alg_name, alg_data)
   raise AvbError('Unknown algorithm type {}'.format(alg_type))
+
+
+def raw_sign(signing_helper, algorithm_name, key_path, raw_data_to_sign):
+  """Computes a raw RSA signature using |signing_helper| or openssl.
+
+  Arguments:
+    signing_helper: Program which signs a hash and returns the signature.
+    algorithm_name: The algorithm name as per the ALGORITHMS dict.
+    key_path: Path to the private key file. Must be PEM format.
+    raw_data_to_sign: Data to sign (bytearray or str expected).
+
+  Returns:
+    A bytearray containing the signature.
+
+  Raises:
+    Exception: If an error occurs.
+  """
+  p = None
+  if signing_helper is not None:
+      p = subprocess.Popen(
+          [signing_helper, algorithm_name, key_path],
+          stdin=subprocess.PIPE,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.PIPE)
+  else:
+      p = subprocess.Popen(
+          ['openssl', 'rsautl', '-sign', '-inkey', key_path, '-raw'],
+          stdin=subprocess.PIPE,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.PIPE)
+  (pout, perr) = p.communicate(str(raw_data_to_sign))
+  retcode = p.wait()
+  if retcode != 0:
+    raise AvbError('Error signing: {}'.format(perr))
+  return bytearray(pout)
 
 
 class ImageChunk(object):
@@ -1779,7 +1815,8 @@ class Avb(object):
     c += ' {}'.format(str(ht.root_digest).encode('hex'))  # root_digest
     c += ' {}'.format(str(ht.salt).encode('hex'))  # salt
     if ht.fec_num_roots > 0:
-      c += ' 9'  # number of optional args
+      c += ' 10'  # number of optional args
+      c += ' restart_on_corruption'
       c += ' ignore_zero_blocks'
       c += ' use_fec_from_device PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'
       c += ' fec_roots {}'.format(ht.fec_num_roots)
@@ -1789,7 +1826,8 @@ class Avb(object):
       c += ' fec_blocks {}'.format(ht.fec_offset/ht.data_block_size)
       c += ' fec_start {}'.format(ht.fec_offset/ht.data_block_size)
     else:
-      c += ' 1'  # number of optional args
+      c += ' 2'  # number of optional args
+      c += ' restart_on_corruption'
       c += ' ignore_zero_blocks'
     c += '" root=0xfd00'
 
@@ -1811,7 +1849,7 @@ class Avb(object):
   def make_vbmeta_image(self, output, chain_partitions, algorithm_name,
                         key_path, public_key_metadata_path, rollback_index,
                         flags, props, props_from_file, kernel_cmdlines,
-                        generate_dm_verity_cmdline_from_hashtree,
+                        setup_rootfs_from_kernel,
                         include_descriptors_from_image, signing_helper):
     """Implements the 'make_vbmeta_image' command.
 
@@ -1826,7 +1864,7 @@ class Avb(object):
       props: Properties to insert (list of strings of the form 'key:value').
       props_from_file: Properties to insert (list of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
-      generate_dm_verity_cmdline_from_hashtree: None or file to generate from.
+      setup_rootfs_from_kernel: None or file to generate from.
       include_descriptors_from_image: List of file objects with descriptors.
       signing_helper: Program which signs a hash and return signature.
 
@@ -1854,7 +1892,7 @@ class Avb(object):
     vbmeta_blob = self._generate_vbmeta_blob(
         algorithm_name, key_path, public_key_metadata_path, descriptors,
         rollback_index, flags, props, props_from_file, kernel_cmdlines,
-        generate_dm_verity_cmdline_from_hashtree,
+        setup_rootfs_from_kernel,
         include_descriptors_from_image, signing_helper)
 
     # Write entire vbmeta blob (header, authentication, auxiliary).
@@ -1865,7 +1903,7 @@ class Avb(object):
                             public_key_metadata_path, descriptors,
                             rollback_index, flags, props, props_from_file,
                             kernel_cmdlines,
-                            generate_dm_verity_cmdline_from_hashtree,
+                            setup_rootfs_from_kernel,
                             include_descriptors_from_image, signing_helper):
     """Generates a VBMeta blob.
 
@@ -1887,7 +1925,7 @@ class Avb(object):
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
-      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+      setup_rootfs_from_kernel: None or file to generate
         dm-verity kernel cmdline from.
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
@@ -1936,9 +1974,9 @@ class Avb(object):
         encoded_descriptors.extend(desc.encode())
 
     # Add AvbKernelCmdline descriptor for dm-verity, if requested.
-    if generate_dm_verity_cmdline_from_hashtree:
+    if setup_rootfs_from_kernel:
       image_handler = ImageHandler(
-          generate_dm_verity_cmdline_from_hashtree.name)
+          setup_rootfs_from_kernel.name)
       cmdline_desc = self._get_cmdline_descriptors_for_dm_verity(image_handler)
       encoded_descriptors.extend(cmdline_desc[0].encode())
       encoded_descriptors.extend(cmdline_desc[1].encode())
@@ -1992,7 +2030,7 @@ class Avb(object):
     # For the Authentication data block, the hash is first and then
     # the signature.
     h.authentication_data_block_size = round_to_multiple(
-        alg.hash_num_bytes + alg.public_key_num_bytes, 64)
+        alg.hash_num_bytes + alg.signature_num_bytes, 64)
     h.algorithm_type = alg.algorithm_type
     h.hash_offset = 0
     h.hash_size = alg.hash_num_bytes
@@ -2030,25 +2068,9 @@ class Avb(object):
       binary_hash.extend(ha.digest())
 
       # Calculate the signature.
-      p = None
-      if signing_helper is not None:
-          p = subprocess.Popen(
-              [signing_helper, algorithm_name, key_path],
-              stdin=subprocess.PIPE,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE)
-      else:
-          p = subprocess.Popen(
-              ['openssl', 'rsautl', '-sign', '-inkey', key_path, '-raw'],
-              stdin=subprocess.PIPE,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE)
       padding_and_hash = str(bytearray(alg.padding)) + binary_hash
-      (pout, perr) = p.communicate(padding_and_hash)
-      retcode = p.wait()
-      if retcode != 0:
-        raise AvbError('Error signing: {}'.format(perr))
-      binary_signature.extend(pout)
+      binary_signature.extend(raw_sign(signing_helper, algorithm_name, key_path,
+                                       padding_and_hash))
 
     # Generate Authentication data block.
     auth_data_blob = bytearray()
@@ -2073,7 +2095,7 @@ class Avb(object):
                       hash_algorithm, salt, algorithm_name, key_path,
                       public_key_metadata_path, rollback_index, props,
                       props_from_file, kernel_cmdlines,
-                      generate_dm_verity_cmdline_from_hashtree,
+                      setup_rootfs_from_kernel,
                       include_descriptors_from_image, signing_helper):
     """Implementation of the add_hash_footer on unsparse images.
 
@@ -2090,7 +2112,7 @@ class Avb(object):
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
-      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+      setup_rootfs_from_kernel: None or file to generate
         dm-verity kernel cmdline from.
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
@@ -2168,7 +2190,7 @@ class Avb(object):
       vbmeta_blob = self._generate_vbmeta_blob(
           algorithm_name, key_path, public_key_metadata_path, [h_desc],
           rollback_index, flags, props, props_from_file, kernel_cmdlines,
-          generate_dm_verity_cmdline_from_hashtree,
+          setup_rootfs_from_kernel,
           include_descriptors_from_image, signing_helper)
 
       # If the image isn't sparse, its size might not be a multiple of
@@ -2216,7 +2238,7 @@ class Avb(object):
                           block_size, salt, algorithm_name, key_path,
                           public_key_metadata_path, rollback_index,
                           props, props_from_file, kernel_cmdlines,
-                          generate_dm_verity_cmdline_from_hashtree,
+                          setup_rootfs_from_kernel,
                           include_descriptors_from_image,
                           calc_max_image_size, signing_helper):
     """Implements the 'add_hashtree_footer' command.
@@ -2240,7 +2262,7 @@ class Avb(object):
       props: Properties to insert (List of strings of the form 'key:value').
       props_from_file: Properties to insert (List of strings 'key:<path>').
       kernel_cmdlines: Kernel cmdlines to insert (list of strings).
-      generate_dm_verity_cmdline_from_hashtree: None or file to generate
+      setup_rootfs_from_kernel: None or file to generate
         dm-verity kernel cmdline from.
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
@@ -2383,7 +2405,7 @@ class Avb(object):
       vbmeta_blob = self._generate_vbmeta_blob(
           algorithm_name, key_path, public_key_metadata_path, [ht_desc],
           rollback_index, flags, props, props_from_file, kernel_cmdlines,
-          generate_dm_verity_cmdline_from_hashtree,
+          setup_rootfs_from_kernel,
           include_descriptors_from_image, signing_helper)
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
                         len(vbmeta_blob))
@@ -2411,6 +2433,119 @@ class Avb(object):
       # Truncate back to original size, then re-raise.
       image.truncate(original_image_size)
       raise
+
+  def make_atx_certificate(self, output, authority_key_path, subject_key,
+                           subject_key_version, subject,
+                           is_intermediate_authority, signing_helper):
+    """Implements the 'make_atx_certificate' command.
+
+    Android Things certificates are required for Android Things public key
+    metadata. They chain the vbmeta signing key for a particular product back to
+    a fused, permanent root key. These certificates are fixed-length and fixed-
+    format with the explicit goal of not parsing ASN.1 in bootloader code.
+
+    Arguments:
+      output: Certificate will be written to this file on success.
+      authority_key_path: A PEM file path with the authority private key.
+                          If None, then a certificate will be created without a
+                          signature. The signature can be created out-of-band
+                          and appended.
+      subject_key: A PEM or DER subject public key.
+      subject_key_version: A 64-bit version value. If this is None, the number
+                           of seconds since the epoch is used.
+      subject: A subject identifier. For Product Signing Key certificates this
+               should be the same Product ID found in the permanent attributes.
+      is_intermediate_authority: True if the certificate is for an intermediate
+                                 authority.
+      signing_helper: Program which signs a hash and returns the signature.
+    """
+    signed_data = bytearray()
+    signed_data.extend(struct.pack('<I', 1))  # Format Version
+    signed_data.extend(
+        encode_rsa_key(Crypto.PublicKey.RSA.importKey(subject_key)))
+    hasher = hashlib.sha256()
+    hasher.update(subject)
+    signed_data.extend(hasher.digest())
+    usage = 'com.google.android.things.vboot'
+    if is_intermediate_authority:
+      usage += '.ca'
+    hasher = hashlib.sha256()
+    hasher.update(usage)
+    signed_data.extend(hasher.digest())
+    if not subject_key_version:
+      subject_key_version = int(time.time())
+    signed_data.extend(struct.pack('<Q', subject_key_version))
+    signature = bytearray()
+    if authority_key_path:
+      padding_and_hash = bytearray()
+      algorithm_name = None
+      hasher = None
+      if is_intermediate_authority:
+        hasher = hashlib.sha512()
+        algorithm_name = 'SHA512_RSA4096'
+      else:
+        hasher = hashlib.sha256()
+        algorithm_name = 'SHA256_RSA2048'
+      padding_and_hash.extend(ALGORITHMS[algorithm_name].padding)
+      hasher.update(signed_data)
+      padding_and_hash.extend(hasher.digest())
+      signature.extend(raw_sign(signing_helper, algorithm_name,
+                                authority_key_path, padding_and_hash))
+    output.write(signed_data)
+    output.write(signature)
+
+  def make_atx_permanent_attributes(self, output, root_authority_key,
+                                    product_id):
+    """Implements the 'make_atx_permanent_attributes' command.
+
+    Android Things permanent attributes are designed to be permanent for a
+    particular product and a hash of these attributes should be fused into
+    hardware to enforce this.
+
+    Arguments:
+      output: Attributes will be written to this file on success.
+      root_authority_key: A PEM or DER public key for the root authority.
+      product_id: A 16-byte Product ID.
+
+    Raises:
+      AvbError: If an argument is incorrect.
+    """
+    if len(product_id) != 16:
+      raise AvbError('Invalid Product ID length.')
+    output.write(struct.pack('<I', 1))  # Format Version
+    write_rsa_key(output, Crypto.PublicKey.RSA.importKey(root_authority_key))
+    output.write(product_id)
+
+  def make_atx_metadata(self, output, intermediate_key_certificate,
+                        product_key_certificate, google_key_version):
+    """Implements the 'make_atx_metadata' command.
+
+    Android Things metadata are included in vbmeta images to facilitate
+    verification. The output of this command can be used as the
+    public_key_metadata argument to other commands.
+
+    Arguments:
+      output: Metadata will be written to this file on success.
+      intermediate_key_certificate: A certificate file as output by
+                                    make_atx_certificate with
+                                    is_intermediate_authority set to true.
+      product_key_certificate: A certificate file as output by
+                               make_atx_certificate with
+                               is_intermediate_authority set to false.
+      google_key_version: The version of the Google Signing Key used in the
+                          associated vbmeta image.
+
+    Raises:
+      AvbError: If an argument is incorrect.
+    """
+    if len(intermediate_key_certificate) != 1108:
+      raise AvbError('Invalid intermediate key certificate length.')
+    if len(product_key_certificate) != 852:
+      raise AvbError('Invalid product key certificate length.')
+    output.write(struct.pack('<I', 1))  # Format Version
+    output.write(intermediate_key_certificate)
+    output.write(product_key_certificate)
+    output.write(struct.pack('<Q', google_key_version))
 
 
 def calc_hash_level_offsets(image_size, block_size, digest_size):
@@ -2616,9 +2751,13 @@ class AvbTool(object):
                             help='Add kernel cmdline',
                             metavar='CMDLINE',
                             action='append')
-    sub_parser.add_argument('--generate_dm_verity_cmdline_from_hashtree',
+    # TODO(zeuthen): the --setup_rootfs_from_kernel option used to be called
+    # --generate_dm_verity_cmdline_from_hashtree. Remove support for the latter
+    # at some future point.
+    sub_parser.add_argument('--setup_rootfs_from_kernel',
+                            '--generate_dm_verity_cmdline_from_hashtree',
                             metavar='IMAGE',
-                            help='Generate kernel cmdline for dm-verity',
+                            help='Adds kernel cmdline to set up IMAGE',
                             type=argparse.FileType('rb'))
     sub_parser.add_argument('--include_descriptors_from_image',
                             help='Include descriptors from image',
@@ -2665,6 +2804,9 @@ class AvbTool(object):
                             help='VBMeta flags',
                             type=parse_number,
                             default=0)
+    sub_parser.add_argument('--set_hashtree_disabled_flag',
+                            help='Set the HASHTREE_DISABLED flag',
+                            action='store_true')
     sub_parser.set_defaults(func=self.make_vbmeta_image)
 
     sub_parser = subparsers.add_parser('add_hash_footer',
@@ -2765,6 +2907,77 @@ class AvbTool(object):
                             default='15:7:0:14:7:0')
     sub_parser.set_defaults(func=self.set_ab_metadata)
 
+    sub_parser = subparsers.add_parser(
+        'make_atx_certificate',
+        help='Create an Android Things eXtension (ATX) certificate.')
+    sub_parser.add_argument('--output',
+                            help='Write certificate to file',
+                            type=argparse.FileType('wb'),
+                            default=sys.stdout)
+    sub_parser.add_argument('--subject',
+                            help=('Path to subject file'),
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--subject_key',
+                            help=('Path to subject RSA public key file'),
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--subject_key_version',
+                            help=('Version of the subject key'),
+                            type=parse_number,
+                            required=False)
+    sub_parser.add_argument('--subject_is_intermediate_authority',
+                            help=('Generate an intermediate authority '
+                                  'certificate'),
+                            action='store_true')
+    sub_parser.add_argument('--authority_key',
+                            help='Path to authority RSA private key file',
+                            required=False)
+    sub_parser.add_argument('--signing_helper',
+                            help='Path to helper used for signing',
+                            metavar='APP',
+                            default=None,
+                            required=False)
+    sub_parser.set_defaults(func=self.make_atx_certificate)
+
+    sub_parser = subparsers.add_parser(
+        'make_atx_permanent_attributes',
+        help='Create Android Things eXtension (ATX) permanent attributes.')
+    sub_parser.add_argument('--output',
+                            help='Write attributes to file',
+                            type=argparse.FileType('wb'),
+                            default=sys.stdout)
+    sub_parser.add_argument('--root_authority_key',
+                            help='Path to authority RSA public key file',
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--product_id',
+                            help=('Path to Product ID file'),
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.set_defaults(func=self.make_atx_permanent_attributes)
+
+    sub_parser = subparsers.add_parser(
+        'make_atx_metadata',
+        help='Create Android Things eXtension (ATX) metadata.')
+    sub_parser.add_argument('--output',
+                            help='Write metadata to file',
+                            type=argparse.FileType('wb'),
+                            default=sys.stdout)
+    sub_parser.add_argument('--intermediate_key_certificate',
+                            help='Path to intermediate key certificate file',
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--product_key_certificate',
+                            help='Path to product key certificate file',
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--google_key_version',
+                            help=('Version of the Google signing key'),
+                            type=parse_number,
+                            default=0)
+    sub_parser.set_defaults(func=self.make_atx_metadata)
+
     args = parser.parse_args(argv[1:])
     try:
       args.func(args)
@@ -2782,12 +2995,14 @@ class AvbTool(object):
 
   def make_vbmeta_image(self, args):
     """Implements the 'make_vbmeta_image' sub-command."""
+    if args.set_hashtree_disabled_flag:
+      args.flags |= AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED
     self.avb.make_vbmeta_image(args.output, args.chain_partition,
                                args.algorithm, args.key,
                                args.public_key_metadata, args.rollback_index,
                                args.flags, args.prop, args.prop_from_file,
                                args.kernel_cmdline,
-                               args.generate_dm_verity_cmdline_from_hashtree,
+                               args.setup_rootfs_from_kernel,
                                args.include_descriptors_from_image, args.signing_helper)
 
   def add_hash_footer(self, args):
@@ -2798,7 +3013,7 @@ class AvbTool(object):
                              args.public_key_metadata, args.rollback_index,
                              args.prop, args.prop_from_file,
                              args.kernel_cmdline,
-                             args.generate_dm_verity_cmdline_from_hashtree,
+                             args.setup_rootfs_from_kernel,
                              args.include_descriptors_from_image, args.signing_helper)
 
   def add_hashtree_footer(self, args):
@@ -2813,7 +3028,7 @@ class AvbTool(object):
                                  args.rollback_index, args.prop,
                                  args.prop_from_file,
                                  args.kernel_cmdline,
-                                 args.generate_dm_verity_cmdline_from_hashtree,
+                                 args.setup_rootfs_from_kernel,
                                  args.include_descriptors_from_image,
                                  args.calc_max_image_size, args.signing_helper)
 
@@ -2828,6 +3043,28 @@ class AvbTool(object):
   def info_image(self, args):
     """Implements the 'info_image' sub-command."""
     self.avb.info_image(args.image.name, args.output)
+
+  def make_atx_certificate(self, args):
+    """Implements the 'make_atx_certificate' sub-command."""
+    self.avb.make_atx_certificate(args.output, args.authority_key,
+                                  args.subject_key.read(),
+                                  args.subject_key_version,
+                                  args.subject.read(),
+                                  args.subject_is_intermediate_authority,
+                                  args.signing_helper)
+
+  def make_atx_permanent_attributes(self, args):
+    """Implements the 'make_atx_permanent_attributes' sub-command."""
+    self.avb.make_atx_permanent_attributes(args.output,
+                                           args.root_authority_key.read(),
+                                           args.product_id.read())
+
+  def make_atx_metadata(self, args):
+    """Implements the 'make_atx_metadata' sub-command."""
+    self.avb.make_atx_metadata(args.output,
+                               args.intermediate_key_certificate.read(),
+                               args.product_key_certificate.read(),
+                               args.google_key_version)
 
 
 if __name__ == '__main__':

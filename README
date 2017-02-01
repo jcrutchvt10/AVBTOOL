@@ -64,6 +64,11 @@ seven boot tries.
 An implementation of a boot_control HAL using AVB-specific A/B
 metadata is also provided.
 
+Android Things has specific requirements and validation logic for the
+vbmeta public key. An extension is provided in libavb_atx which performs
+this validation as an implementatio of libavb's public key validation
+operation (see avb_validate_vbmeta_public_key in avb_ops.h).
+
 -- FILES AND DIRECTORIES
 
  libavb/
@@ -85,6 +90,9 @@ metadata is also provided.
    An A/B implementation for use in boot loaders. This is built on top
    of libavb.
 
+ libavb_atx/
+
+   An Android Things Extension for validating public key metadata.
 
  boot_control/
 
@@ -103,7 +111,12 @@ metadata is also provided.
 
  test/
 
-   Contains unit tests for abvtool, libavb, and libavb_ab.
+   Contains unit tests for abvtool, libavb, libavb_ab, and libavb_atx.
+
+ examples/uefi/
+
+   Contains the source-code for a UEFI-based boot-loader utilizing
+   libavb/ and libavb_ab/.
 
 -- AUDIENCE AND PORTABILITY NOTES
 
@@ -185,7 +198,7 @@ The content for the vbmeta partition can be generated as follows:
      [--algorithm ALGORITHM] [--key /path/to/key_used_for_signing_or_pub_key]   \
      [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
      [--include_descriptors_from_footer /path/to/image.bin]                     \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--chain_partition part_name:rollback_index_location:/path/to/key1.bin]    \
      [--signing_helper /path/to/external/signer]
 
@@ -199,7 +212,7 @@ added to an existing image as follows:
      [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
      [--hash_algorithm HASH_ALG] [--salt HEX]                                   \
      [--include_descriptors_from_footer /path/to/image.bin]                     \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--signing_helper /path/to/external/signer]
 
 An integrity footer containing the root digest and salt for a hashtree
@@ -213,7 +226,7 @@ hashtree is also appended to the image.
      [--public_key_metadata /path/to/pkmd.bin] [--rollback_index NUMBER]        \
      [--hash_algorithm HASH_ALG] [--salt HEX] [--block_size SIZE]               \
      [--include_descriptors_from_footer /path/to/image.bin]                     \
-     [--generate_dm_verity_cmdline_from_footer /path/to/image.bin]              \
+     [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--signing_helper /path/to/external/signer]
 
 The integrity footer on an image can be removed from an image. The
@@ -269,7 +282,7 @@ embed a blob ("AVB_pkmd" in the following) that can be used to
 e.g. derive AVB_pk. Both AVB_pk and AVB_pkmd is passed to the
 bootloader for validation as part of verifying a slot.
 
-To prevent rollback attakcs, the rollback index should be increased on
+To prevent rollback attacks, the rollback index should be increased on
 a regular basis. The rollback index can be set with the
 BOARD_AVB_ROLLBACK_INDEX variable:
 
