@@ -1622,7 +1622,7 @@ class Avb(object):
 
     Arguments:
       image_filename: File to erase a footer from.
-      keep_hashtree: If True, keep the hashtree around.
+      keep_hashtree: If True, keep the hashtree and FEC around.
 
     Raises:
       AvbError: If there's no footer in the image.
@@ -1640,12 +1640,17 @@ class Avb(object):
       new_image_size = footer.original_image_size
     else:
       # If requested to keep the hashtree, search for a hashtree
-      # descriptor to figure out the location and size of the hashtree.
+      # descriptor to figure out the location and size of the hashtree
+      # and FEC.
       for desc in descriptors:
         if isinstance(desc, AvbHashtreeDescriptor):
           # The hashtree is always just following the main data so the
           # new size is easily derived.
           new_image_size = desc.tree_offset + desc.tree_size
+          # If the image has FEC codes, also keep those.
+          if desc.fec_offset > 0:
+            fec_end = desc.fec_offset + desc.fec_size
+            new_image_size = max(new_image_size, fec_end)
           break
       if not new_image_size:
         raise AvbError('Requested to keep hashtree but no hashtree '
@@ -2874,7 +2879,7 @@ class AvbTool(object):
                             type=argparse.FileType('rwb+'),
                             required=True)
     sub_parser.add_argument('--keep_hashtree',
-                            help='Keep the hashtree in the image',
+                            help='Keep the hashtree and FEC in the image',
                             action='store_true')
     sub_parser.set_defaults(func=self.erase_footer)
 
