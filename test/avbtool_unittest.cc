@@ -921,14 +921,15 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
       "'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'\n",
       InfoImage(vbmeta_dmv_path));
 
-  // Check that the footer is correctly erased and the hashtree
-  // remains - see above for why the constant 1069056 is used.
+  // Check that the footer is correctly erased and the hashtree and
+  // FEC data remains. The constant 1085440 is used because it's where
+  // the FEC data ends (it's at offset 1069056 and size 16384).
   EXPECT_COMMAND(0,
                  "./avbtool erase_footer --image %s --keep_hashtree",
                  rootfs_path.value().c_str());
   int64_t erased_footer_file_size;
   ASSERT_TRUE(base::GetFileSize(rootfs_path, &erased_footer_file_size));
-  EXPECT_EQ(static_cast<size_t>(erased_footer_file_size), 1069056UL);
+  EXPECT_EQ(static_cast<size_t>(erased_footer_file_size), 1085440UL);
 }
 
 TEST_F(AvbToolTest, AddHashtreeFooterFEC) {
