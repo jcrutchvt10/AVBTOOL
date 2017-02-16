@@ -911,15 +911,6 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       slot_data->cmdline = new_cmdline;
     }
 
-    /* Add androidboot.slot_suffix, if applicable. */
-    if (avb_strlen(ab_suffix) > 0) {
-      if (!cmdline_append_option(
-              slot_data, "androidboot.slot_suffix", ab_suffix)) {
-        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-        goto fail;
-      }
-    }
-
     /* Set androidboot.avb.device_state to "locked" or "unlocked". */
     bool is_device_unlocked;
     io_ret = ops->read_is_device_unlocked(ops, &is_device_unlocked);
