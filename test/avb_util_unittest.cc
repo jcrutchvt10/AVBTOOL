@@ -470,6 +470,13 @@ TEST(UtilTest, StrReplace) {
             std::string(avb_replace("$(FOO)$(FOO)", "$(FOO)", "LONGSTRING")));
 }
 
+TEST(UtilTest, StrDupV) {
+  // We don't care about leaking avb_strdupv() result.
+  EXPECT_EQ("xyz", std::string(avb_strdupv("x", "y", "z", NULL)));
+  EXPECT_EQ("HelloWorld XYZ",
+            std::string(avb_strdupv("Hello", "World", " XYZ", NULL)));
+}
+
 TEST(UtilTest, Crc32) {
   /* Compare with output of crc32(1):
    *

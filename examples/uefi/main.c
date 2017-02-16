@@ -38,6 +38,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
   UEFIAvbBootKernelResult boot_result;
   const char* requested_partitions[] = {"boot", NULL};
   bool unlocked = true;
+  char* additional_cmdline = NULL;
 
   InitializeLib(ImageHandle, SystemTable);
 
@@ -69,14 +70,24 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
     case AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR:
       avb_printv("slot_suffix: ", slot_data->ab_suffix, "\n", NULL);
       avb_printv("cmdline:     ", slot_data->cmdline, "\n", NULL);
-      /* Pass 'skip_initramfs' since we're not booting into recovery mode. */
+      /* Pass 'skip_initramfs' since we're not booting into recovery
+       * mode. Also pass the selected slot in androidboot.slot_suffix.
+       */
+      additional_cmdline = avb_strdupv("skip_initramfs ",
+                                       "androidboot.slot_suffix=",
+                                       slot_data->ab_suffix,
+                                       NULL);
+      if (additional_cmdline == NULL) {
+        avb_fatal("Error allocating additional_cmdline.\n");
+      }
       boot_result =
-          uefi_avb_boot_kernel(ImageHandle, slot_data, "skip_initramfs");
+          uefi_avb_boot_kernel(ImageHandle, slot_data, additional_cmdline);
       avb_fatalv("uefi_avb_boot_kernel() failed with error ",
                  uefi_avb_boot_kernel_result_to_string(boot_result),
                  "\n",
                  NULL);
       avb_slot_verify_data_free(slot_data);
+      avb_free(additional_cmdline);
       break;
     case AVB_AB_FLOW_RESULT_ERROR_OOM:
       avb_fatal("OOM error while doing A/B select flow.\n");
