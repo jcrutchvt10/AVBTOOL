@@ -200,6 +200,13 @@ void* avb_calloc(size_t size) AVB_ATTR_WARN_UNUSED_RESULT;
 /* Duplicates a NUL-terminated string. Returns NULL on OOM. */
 char* avb_strdup(const char* str) AVB_ATTR_WARN_UNUSED_RESULT;
 
+/* Duplicates a NULL-terminated array of NUL-terminated strings by
+ * concatening them. The returned string will be
+ * NUL-terminated. Returns NULL on OOM.
+ */
+char* avb_strdupv(const char* str,
+                  ...) AVB_ATTR_WARN_UNUSED_RESULT AVB_ATTR_SENTINEL;
+
 /* Finds the first occurrence of |needle| in the string |haystack|
  * where both strings are NUL-terminated strings. The terminating NUL
  * bytes are not compared.

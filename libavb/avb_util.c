@@ -24,6 +24,8 @@
 
 #include "avb_util.h"
 
+#include <stdarg.h>
+
 uint32_t avb_be32toh(uint32_t in) {
   uint8_t* d = (uint8_t*)&in;
   uint32_t ret;
@@ -332,6 +334,49 @@ char* avb_replace(const char* str, const char* search, const char* replace) {
     ret = new_str;
     ret_len = num_new - 1;
   }
+
+out:
+  return ret;
+}
+
+/* We only support a limited amount of strings in avb_strdupv(). */
+#define STRDUPV_MAX_NUM_STRINGS 32
+
+char* avb_strdupv(const char* str, ...) {
+  va_list ap;
+  const char* strings[STRDUPV_MAX_NUM_STRINGS];
+  size_t lengths[STRDUPV_MAX_NUM_STRINGS];
+  size_t num_strings, n, total_length;
+  char *ret = NULL, *dest;
+
+  num_strings = 0;
+  total_length = 0;
+  va_start(ap, str);
+  do {
+    strings[num_strings] = str;
+    lengths[num_strings] = avb_strlen(str);
+    total_length += lengths[num_strings];
+    num_strings++;
+    if (num_strings == STRDUPV_MAX_NUM_STRINGS) {
+      avb_fatal("Too many strings passed to avb_strdupv().\n");
+      break;
+    }
+    str = va_arg(ap, const char*);
+  } while (str != NULL);
+  va_end(ap);
+
+  ret = avb_malloc(total_length + 1);
+  if (ret == NULL) {
+    goto out;
+  }
+
+  dest = ret;
+  for (n = 0; n < num_strings; n++) {
+    avb_memcpy(dest, strings[n], lengths[n]);
+    dest += lengths[n];
+  }
+  *dest = '\0';
+  avb_assert(dest == ret + total_length);
 
 out:
   return ret;
