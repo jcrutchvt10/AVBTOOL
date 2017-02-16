@@ -2101,7 +2101,8 @@ class Avb(object):
                       public_key_metadata_path, rollback_index, props,
                       props_from_file, kernel_cmdlines,
                       setup_rootfs_from_kernel,
-                      include_descriptors_from_image, signing_helper):
+                      include_descriptors_from_image, signing_helper,
+                      output_vbmeta_image, do_not_append_vbmeta_image):
     """Implementation of the add_hash_footer on unsparse images.
 
     Arguments:
@@ -2122,6 +2123,8 @@ class Avb(object):
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
       signing_helper: Program which signs a hash and return signature.
+      output_vbmeta_image: If not None, also write vbmeta struct to this file.
+      do_not_append_vbmeta_image: If True, don't append vbmeta struct.
 
     Raises:
       AvbError: If an argument is incorrect.
@@ -2213,25 +2216,32 @@ class Avb(object):
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
                         len(vbmeta_blob))
       vbmeta_blob_with_padding = vbmeta_blob + '\0'*padding_needed
-      image.append_raw(vbmeta_blob_with_padding)
-      vbmeta_end_offset = vbmeta_offset + len(vbmeta_blob_with_padding)
 
-      # Now insert a DONT_CARE chunk with enough bytes such that the
-      # final Footer block is at the end of partition_size..
-      image.append_dont_care(partition_size - vbmeta_end_offset -
-                             1*image.block_size)
+      # Write vbmeta blob, if requested.
+      if output_vbmeta_image:
+        output_vbmeta_image.write(vbmeta_blob)
 
-      # Generate the Footer that tells where the VBMeta footer
-      # is. Also put enough padding in the front of the footer since
-      # we'll write out an entire block.
-      footer = AvbFooter()
-      footer.original_image_size = original_image_size
-      footer.vbmeta_offset = vbmeta_offset
-      footer.vbmeta_size = len(vbmeta_blob)
-      footer_blob = footer.encode()
-      footer_blob_with_padding = ('\0'*(image.block_size - AvbFooter.SIZE) +
-                                  footer_blob)
-      image.append_raw(footer_blob_with_padding)
+      # Append vbmeta blob and footer, unless requested not to.
+      if not do_not_append_vbmeta_image:
+        image.append_raw(vbmeta_blob_with_padding)
+        vbmeta_end_offset = vbmeta_offset + len(vbmeta_blob_with_padding)
+
+        # Now insert a DONT_CARE chunk with enough bytes such that the
+        # final Footer block is at the end of partition_size..
+        image.append_dont_care(partition_size - vbmeta_end_offset -
+                               1*image.block_size)
+
+        # Generate the Footer that tells where the VBMeta footer
+        # is. Also put enough padding in the front of the footer since
+        # we'll write out an entire block.
+        footer = AvbFooter()
+        footer.original_image_size = original_image_size
+        footer.vbmeta_offset = vbmeta_offset
+        footer.vbmeta_size = len(vbmeta_blob)
+        footer_blob = footer.encode()
+        footer_blob_with_padding = ('\0'*(image.block_size - AvbFooter.SIZE) +
+                                    footer_blob)
+        image.append_raw(footer_blob_with_padding)
 
     except:
       # Truncate back to original size, then re-raise
@@ -2245,7 +2255,8 @@ class Avb(object):
                           props, props_from_file, kernel_cmdlines,
                           setup_rootfs_from_kernel,
                           include_descriptors_from_image,
-                          calc_max_image_size, signing_helper):
+                          calc_max_image_size, signing_helper,
+                          output_vbmeta_image, do_not_append_vbmeta_image):
     """Implements the 'add_hashtree_footer' command.
 
     See https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity for
@@ -2275,6 +2286,8 @@ class Avb(object):
         calculate the maximum image size leaving enough room for hashtree
         and metadata with the given |partition_size|.
       signing_helper: Program which signs a hash and return signature.
+      output_vbmeta_image: If not None, also write vbmeta struct to this file.
+      do_not_append_vbmeta_image: If True, don't append vbmeta struct.
 
     Raises:
       AvbError: If an argument is incorrect.
@@ -2415,24 +2428,31 @@ class Avb(object):
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
                         len(vbmeta_blob))
       vbmeta_blob_with_padding = vbmeta_blob + '\0'*padding_needed
-      image.append_raw(vbmeta_blob_with_padding)
 
-      # Now insert a DONT_CARE chunk with enough bytes such that the
-      # final Footer block is at the end of partition_size..
-      image.append_dont_care(partition_size - image.image_size -
-                             1*image.block_size)
+      # Write vbmeta blob, if requested.
+      if output_vbmeta_image:
+        output_vbmeta_image.write(vbmeta_blob)
 
-      # Generate the Footer that tells where the VBMeta footer
-      # is. Also put enough padding in the front of the footer since
-      # we'll write out an entire block.
-      footer = AvbFooter()
-      footer.original_image_size = original_image_size
-      footer.vbmeta_offset = vbmeta_offset
-      footer.vbmeta_size = len(vbmeta_blob)
-      footer_blob = footer.encode()
-      footer_blob_with_padding = ('\0'*(image.block_size - AvbFooter.SIZE) +
-                                  footer_blob)
-      image.append_raw(footer_blob_with_padding)
+      # Append vbmeta blob and footer, unless requested not to.
+      if not do_not_append_vbmeta_image:
+        image.append_raw(vbmeta_blob_with_padding)
+
+        # Now insert a DONT_CARE chunk with enough bytes such that the
+        # final Footer block is at the end of partition_size..
+        image.append_dont_care(partition_size - image.image_size -
+                               1*image.block_size)
+
+        # Generate the Footer that tells where the VBMeta footer
+        # is. Also put enough padding in the front of the footer since
+        # we'll write out an entire block.
+        footer = AvbFooter()
+        footer.original_image_size = original_image_size
+        footer.vbmeta_offset = vbmeta_offset
+        footer.vbmeta_size = len(vbmeta_blob)
+        footer_blob = footer.encode()
+        footer_blob_with_padding = ('\0'*(image.block_size - AvbFooter.SIZE) +
+                                    footer_blob)
+        image.append_raw(footer_blob_with_padding)
 
     except:
       # Truncate back to original size, then re-raise.
@@ -2831,6 +2851,13 @@ class AvbTool(object):
                             default='sha256')
     sub_parser.add_argument('--salt',
                             help='Salt in hex (default: /dev/urandom)')
+    sub_parser.add_argument('--output_vbmeta_image',
+                            help='Also write vbmeta struct to file',
+                            type=argparse.FileType('wb'))
+    sub_parser.add_argument('--do_not_append_vbmeta_image',
+                            help=('Do not append vbmeta struct or footer '
+                                  'to the image'),
+                            action='store_true')
     self._add_common_args(sub_parser)
     sub_parser.set_defaults(func=self.add_hash_footer)
 
@@ -2868,6 +2895,13 @@ class AvbTool(object):
                                   'leaving enough room for hashtree '
                                   'and metadata with the given partition '
                                   'size.'),
+                            action='store_true')
+    sub_parser.add_argument('--output_vbmeta_image',
+                            help='Also write vbmeta struct to file',
+                            type=argparse.FileType('wb'))
+    sub_parser.add_argument('--do_not_append_vbmeta_image',
+                            help=('Do not append vbmeta struct or footer '
+                                  'to the image'),
                             action='store_true')
     self._add_common_args(sub_parser)
     sub_parser.set_defaults(func=self.add_hashtree_footer)
@@ -3008,7 +3042,8 @@ class AvbTool(object):
                                args.flags, args.prop, args.prop_from_file,
                                args.kernel_cmdline,
                                args.setup_rootfs_from_kernel,
-                               args.include_descriptors_from_image, args.signing_helper)
+                               args.include_descriptors_from_image,
+                               args.signing_helper)
 
   def add_hash_footer(self, args):
     """Implements the 'add_hash_footer' sub-command."""
@@ -3019,7 +3054,10 @@ class AvbTool(object):
                              args.prop, args.prop_from_file,
                              args.kernel_cmdline,
                              args.setup_rootfs_from_kernel,
-                             args.include_descriptors_from_image, args.signing_helper)
+                             args.include_descriptors_from_image,
+                             args.signing_helper,
+                             args.output_vbmeta_image,
+                             args.do_not_append_vbmeta_image)
 
   def add_hashtree_footer(self, args):
     """Implements the 'add_hashtree_footer' sub-command."""
@@ -3035,7 +3073,10 @@ class AvbTool(object):
                                  args.kernel_cmdline,
                                  args.setup_rootfs_from_kernel,
                                  args.include_descriptors_from_image,
-                                 args.calc_max_image_size, args.signing_helper)
+                                 args.calc_max_image_size, args.signing_helper,
+                                 args.output_vbmeta_image,
+                                 args.do_not_append_vbmeta_image)
+
 
   def erase_footer(self, args):
     """Implements the 'erase_footer' sub-command."""
