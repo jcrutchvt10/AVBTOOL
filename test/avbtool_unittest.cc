@@ -293,6 +293,7 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
       rootfs[n] = uint8_t(n);
     }
   }
+  base::FilePath ext_vbmeta_path = testdir_.Append("ext_vbmeta.bin");
   base::FilePath rootfs_path = testdir_.Append("rootfs.bin");
   EXPECT_EQ(rootfs_size,
             static_cast<const size_t>(
@@ -319,9 +320,11 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
                    "--hash_algorithm sha256 --image %s "
                    "--partition_size %d --partition_name foobar "
                    "--algorithm SHA256_RSA2048 "
-                   "--key test/data/testkey_rsa2048.pem",
+                   "--key test/data/testkey_rsa2048.pem "
+                   "--output_vbmeta %s",
                    rootfs_path.value().c_str(),
-                   (int)partition_size);
+                   (int)partition_size,
+                   ext_vbmeta_path.value().c_str());
 
     ASSERT_EQ(base::StringPrintf("Footer version:           1.0\n"
                                  "Image size:               1572864 bytes\n"
@@ -347,6 +350,25 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
                                  "5e4ed357fbcf58d88d9\n",
                                  sparse_image ? " (Sparse)" : ""),
               InfoImage(rootfs_path));
+
+    ASSERT_EQ(
+        "VBMeta image version:     1.0\n"
+        "Header Block:             256 bytes\n"
+        "Authentication Block:     320 bytes\n"
+        "Auxiliary Block:          704 bytes\n"
+        "Algorithm:                SHA256_RSA2048\n"
+        "Rollback Index:           0\n"
+        "Flags:                    0\n"
+        "Descriptors:\n"
+        "    Hash descriptor:\n"
+        "      Image Size:            1052672 bytes\n"
+        "      Hash Algorithm:        sha256\n"
+        "      Partition Name:        foobar\n"
+        "      Salt:                  d00df00d\n"
+        "      Digest:                "
+        "9a58cc996d405e08a1e00f96dbfe9104fedf41cb83b1f"
+        "5e4ed357fbcf58d88d9\n",
+        InfoImage(ext_vbmeta_path));
   }
 
   if (sparse_image) {
@@ -433,6 +455,25 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   int64_t erased_footer_file_size;
   ASSERT_TRUE(base::GetFileSize(rootfs_path, &erased_footer_file_size));
   EXPECT_EQ(static_cast<size_t>(erased_footer_file_size), rootfs_size);
+
+  // Check that --do_not_append_vbmeta_image works as intended.
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer --salt d00df00d "
+                 "--hash_algorithm sha256 --image %s "
+                 "--partition_size %d --partition_name foobar "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--output_vbmeta %s_2nd_run --do_not_append_vbmeta_image",
+                 rootfs_path.value().c_str(),
+                 (int)partition_size,
+                 ext_vbmeta_path.value().c_str());
+  int64_t file_size;
+  ASSERT_TRUE(base::GetFileSize(rootfs_path, &file_size));
+  EXPECT_EQ(static_cast<size_t>(file_size), rootfs_size);
+  EXPECT_COMMAND(0,
+                 "diff %s %s_2nd_run",
+                 ext_vbmeta_path.value().c_str(),
+                 ext_vbmeta_path.value().c_str());
 }
 
 TEST_F(AvbToolTest, AddHashFooter) {
@@ -531,6 +572,7 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
   rootfs.resize(rootfs_size);
   for (size_t n = 0; n < rootfs_size; n++)
     rootfs[n] = uint8_t(n);
+  base::FilePath ext_vbmeta_path = testdir_.Append("ext_vbmeta.bin");
   base::FilePath rootfs_path = testdir_.Append("rootfs.bin");
   EXPECT_EQ(rootfs_size,
             static_cast<const size_t>(
@@ -556,9 +598,11 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                    "./avbtool add_hashtree_footer --salt d00df00d --image %s "
                    "--partition_size %d --partition_name foobar "
                    "--algorithm SHA256_RSA2048 "
-                   "--key test/data/testkey_rsa2048.pem",
+                   "--key test/data/testkey_rsa2048.pem "
+                   "--output_vbmeta_image %s",
                    rootfs_path.value().c_str(),
-                   (int)partition_size);
+                   (int)partition_size,
+                   ext_vbmeta_path.value().c_str());
 
     ASSERT_EQ(base::StringPrintf("Footer version:           1.0\n"
                                  "Image size:               1572864 bytes\n"
@@ -591,6 +635,32 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                                  "e811611467dcd6e8dc4324e45f706c2bdd51db67\n",
                                  sparse_image ? " (Sparse)" : ""),
               InfoImage(rootfs_path));
+
+    ASSERT_EQ(
+        "VBMeta image version:     1.0\n"
+        "Header Block:             256 bytes\n"
+        "Authentication Block:     320 bytes\n"
+        "Auxiliary Block:          768 bytes\n"
+        "Algorithm:                SHA256_RSA2048\n"
+        "Rollback Index:           0\n"
+        "Flags:                    0\n"
+        "Descriptors:\n"
+        "    Hashtree descriptor:\n"
+        "      Version of dm-verity:  1\n"
+        "      Image Size:            1052672 bytes\n"
+        "      Tree Offset:           1052672\n"
+        "      Tree Size:             16384 bytes\n"
+        "      Data Block Size:       4096 bytes\n"
+        "      Hash Block Size:       4096 bytes\n"
+        "      FEC num roots:         0\n"
+        "      FEC offset:            0\n"
+        "      FEC size:              0 bytes\n"
+        "      Hash Algorithm:        sha1\n"
+        "      Partition Name:        foobar\n"
+        "      Salt:                  d00df00d\n"
+        "      Root Digest:           "
+        "e811611467dcd6e8dc4324e45f706c2bdd51db67\n",
+        InfoImage(ext_vbmeta_path));
   }
 
   if (sparse_image) {
@@ -726,6 +796,29 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
   int64_t erased_footer_file_size;
   ASSERT_TRUE(base::GetFileSize(rootfs_path, &erased_footer_file_size));
   EXPECT_EQ(static_cast<size_t>(erased_footer_file_size), 1069056UL);
+
+  // Check that --do_not_append_vbmeta_image works as intended.
+  //
+  // For this we need to reset the size of the image to the original
+  // size because it's not possible to identify the existing hashtree.
+  EXPECT_COMMAND(
+      0, "truncate -s %d %s", (int)rootfs_size, rootfs_path.value().c_str());
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name foobar "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--output_vbmeta %s_2nd_run --do_not_append_vbmeta_image",
+                 rootfs_path.value().c_str(),
+                 (int)partition_size,
+                 ext_vbmeta_path.value().c_str());
+  int64_t file_size;
+  ASSERT_TRUE(base::GetFileSize(rootfs_path, &file_size));
+  EXPECT_EQ(static_cast<size_t>(file_size), 1069056UL);
+  EXPECT_COMMAND(0,
+                 "diff %s %s_2nd_run",
+                 ext_vbmeta_path.value().c_str(),
+                 ext_vbmeta_path.value().c_str());
 }
 
 TEST_F(AvbToolTest, AddHashtreeFooter) {
