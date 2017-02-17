@@ -146,8 +146,16 @@ typedef struct {
  *   will end up pointing to the vbmeta partition for the verified
  *   slot.
  *
+ *   androidboot.vbmeta.version: This is set to the decimal value of
+ *   AVB_MAJOR_VERSION followed by a dot followed by the decimal value
+ *   of AVB_MINOR_VERSION, for example "1.0". This version number
+ *   represents the vbmeta file format version supported by libavb
+ *   copy used in the boot loader. This is not necessarily the same
+ *   version number of the on-disk metadata for the slot that was
+ *   verified.
+ *
  * Note that androidboot.slot_suffix is not set in |cmdline| - you
- * will have to do pass this command-line option yourself.
+ * will have to pass this command-line option yourself.
  *
  * This struct may grow in the future without it being considered an
  * ABI break.
