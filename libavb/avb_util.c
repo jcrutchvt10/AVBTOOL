@@ -340,25 +340,30 @@ out:
 }
 
 /* We only support a limited amount of strings in avb_strdupv(). */
-#define STRDUPV_MAX_NUM_STRINGS 32
+#define AVB_STRDUPV_MAX_NUM_STRINGS 32
 
 char* avb_strdupv(const char* str, ...) {
   va_list ap;
-  const char* strings[STRDUPV_MAX_NUM_STRINGS];
-  size_t lengths[STRDUPV_MAX_NUM_STRINGS];
-  size_t num_strings, n, total_length;
+  const char* strings[AVB_STRDUPV_MAX_NUM_STRINGS];
+  size_t lengths[AVB_STRDUPV_MAX_NUM_STRINGS];
+  size_t num_strings, n;
+  uint64_t total_length;
   char *ret = NULL, *dest;
 
   num_strings = 0;
   total_length = 0;
   va_start(ap, str);
   do {
+    size_t str_len = avb_strlen(str);
     strings[num_strings] = str;
-    lengths[num_strings] = avb_strlen(str);
-    total_length += lengths[num_strings];
+    lengths[num_strings] = str_len;
+    if (!avb_safe_add_to(&total_length, str_len)) {
+      avb_fatal("Overflow while determining total length.\n");
+      break;
+    }
     num_strings++;
-    if (num_strings == STRDUPV_MAX_NUM_STRINGS) {
-      avb_fatal("Too many strings passed to avb_strdupv().\n");
+    if (num_strings == AVB_STRDUPV_MAX_NUM_STRINGS) {
+      avb_fatal("Too many strings passed.\n");
       break;
     }
     str = va_arg(ap, const char*);
