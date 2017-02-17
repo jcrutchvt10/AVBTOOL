@@ -201,7 +201,7 @@ void* avb_calloc(size_t size) AVB_ATTR_WARN_UNUSED_RESULT;
 char* avb_strdup(const char* str) AVB_ATTR_WARN_UNUSED_RESULT;
 
 /* Duplicates a NULL-terminated array of NUL-terminated strings by
- * concatening them. The returned string will be
+ * concatenating them. The returned string will be
  * NUL-terminated. Returns NULL on OOM.
  */
 char* avb_strdupv(const char* str,
