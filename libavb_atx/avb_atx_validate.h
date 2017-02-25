@@ -40,7 +40,6 @@ extern "C" {
 /* Rollback index locations for Android Things key versions. */
 #define AVB_ATX_PIK_VERSION_LOCATION 0x1000
 #define AVB_ATX_PSK_VERSION_LOCATION 0x1001
-#define AVB_ATX_GSK_VERSION_LOCATION 0x1002
 
 /* An implementation of validate_vbmeta_public_key for Android Things. See
  * libavb/avb_ops.h for details on validate_vbmeta_public_key in general. This
@@ -59,10 +58,6 @@ extern "C" {
  *   - Product Signing Key (PSK): This key is a rotated authority for a specific
  *                                Android Things product. It is certified by a
  *                                PIK and must match |public_key_data|.
- *   - Google Signing Key (GSK): This key is a rotated authority for system and
- *                               boot partitions built by Google. The key is
- *                               already verified as part of vbmeta so only the
- *                               key version needs verification here.
  *   - Product ID: This value is provided in permanent attributes and is unique
  *                 to a specific Android Things product. This value must match
  *                 the subject of the PSK certificate.

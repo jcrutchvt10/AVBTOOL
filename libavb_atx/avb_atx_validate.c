@@ -74,17 +74,16 @@ static bool verify_permanent_attributes(
   return true;
 }
 
-/* Verifies signature and fields of a PIK certificate. */
-static bool verify_pik_certificate(
-    AvbAtxCertificate4096* certificate,
-    uint8_t authority[AVB_ATX_PUBLIC_KEY_SIZE_4096],
-    uint64_t minimum_version) {
+/* Verifies the format, key version, usage, and signature of a certificate. */
+static bool verify_certificate(AvbAtxCertificate* certificate,
+                               uint8_t authority[AVB_ATX_PUBLIC_KEY_SIZE],
+                               uint64_t minimum_key_version,
+                               uint8_t expected_usage[AVB_SHA256_DIGEST_SIZE]) {
   const AvbAlgorithmData* algorithm_data;
   uint8_t certificate_hash[AVB_SHA512_DIGEST_SIZE];
-  uint8_t expected_usage[AVB_SHA256_DIGEST_SIZE];
 
   if (certificate->signed_data.version != 1) {
-    avb_error("Unsupported PIK certificate format.\n");
+    avb_error("Unsupported certificate format.\n");
     return false;
   }
   algorithm_data = avb_get_algorithm_data(AVB_ALGORITHM_TYPE_SHA512_RSA4096);
@@ -92,25 +91,39 @@ static bool verify_pik_certificate(
          sizeof(AvbAtxCertificateSignedData),
          certificate_hash);
   if (!avb_rsa_verify(authority,
-                      AVB_ATX_PUBLIC_KEY_SIZE_4096,
+                      AVB_ATX_PUBLIC_KEY_SIZE,
                       certificate->signature,
                       AVB_RSA4096_NUM_BYTES,
                       certificate_hash,
                       AVB_SHA512_DIGEST_SIZE,
                       algorithm_data->padding,
                       algorithm_data->padding_len)) {
-    avb_error("Invalid PIK certificate signature.\n");
+    avb_error("Invalid certificate signature.\n");
     return false;
   }
-  sha256_str("com.google.android.things.vboot.ca", expected_usage);
+  if (certificate->signed_data.key_version < minimum_key_version) {
+    avb_error("Key rollback detected.\n");
+    return false;
+  }
   if (0 != avb_safe_memcmp(certificate->signed_data.usage,
                            expected_usage,
                            AVB_SHA256_DIGEST_SIZE)) {
-    avb_error("Invalid PIK certificate usage.\n");
+    avb_error("Invalid certificate usage.\n");
     return false;
   }
-  if (certificate->signed_data.key_version < minimum_version) {
-    avb_error("PIK rollback detected.\n");
+  return true;
+}
+
+/* Verifies signature and fields of a PIK certificate. */
+static bool verify_pik_certificate(AvbAtxCertificate* certificate,
+                                   uint8_t authority[AVB_ATX_PUBLIC_KEY_SIZE],
+                                   uint64_t minimum_version) {
+  uint8_t expected_usage[AVB_SHA256_DIGEST_SIZE];
+
+  sha256_str("com.google.android.things.vboot.ca", expected_usage);
+  if (!verify_certificate(
+          certificate, authority, minimum_version, expected_usage)) {
+    avb_error("Invalid PIK certificate.\n");
     return false;
   }
   return true;
@@ -118,31 +131,17 @@ static bool verify_pik_certificate(
 
 /* Verifies signature and fields of a PSK certificate. */
 static bool verify_psk_certificate(
-    AvbAtxCertificate2048* certificate,
-    uint8_t authority[AVB_ATX_PUBLIC_KEY_SIZE_2048],
+    AvbAtxCertificate* certificate,
+    uint8_t authority[AVB_ATX_PUBLIC_KEY_SIZE],
     uint64_t minimum_version,
     uint8_t product_id[AVB_ATX_PRODUCT_ID_SIZE]) {
-  const AvbAlgorithmData* algorithm_data;
-  uint8_t certificate_hash[AVB_SHA256_DIGEST_SIZE];
   uint8_t expected_subject[AVB_SHA256_DIGEST_SIZE];
   uint8_t expected_usage[AVB_SHA256_DIGEST_SIZE];
-  if (certificate->signed_data.version != 1) {
-    avb_error("Unsupported PSK certificate format.\n");
-    return false;
-  }
-  algorithm_data = avb_get_algorithm_data(AVB_ALGORITHM_TYPE_SHA256_RSA2048);
-  sha256((const uint8_t*)&certificate->signed_data,
-         sizeof(AvbAtxCertificateSignedData),
-         certificate_hash);
-  if (!avb_rsa_verify(authority,
-                      AVB_ATX_PUBLIC_KEY_SIZE_2048,
-                      certificate->signature,
-                      AVB_RSA2048_NUM_BYTES,
-                      certificate_hash,
-                      AVB_SHA256_DIGEST_SIZE,
-                      algorithm_data->padding,
-                      algorithm_data->padding_len)) {
-    avb_error("Invalid PSK certificate signature.\n");
+
+  sha256_str("com.google.android.things.vboot", expected_usage);
+  if (!verify_certificate(
+          certificate, authority, minimum_version, expected_usage)) {
+    avb_error("Invalid PSK certificate.\n");
     return false;
   }
   sha256(product_id, AVB_ATX_PRODUCT_ID_SIZE, expected_subject);
@@ -150,17 +149,6 @@ static bool verify_psk_certificate(
                            expected_subject,
                            AVB_SHA256_DIGEST_SIZE)) {
     avb_error("Product ID mismatch.\n");
-    return false;
-  }
-  sha256_str("com.google.android.things.vboot", expected_usage);
-  if (0 != avb_safe_memcmp(certificate->signed_data.usage,
-                           expected_usage,
-                           AVB_SHA256_DIGEST_SIZE)) {
-    avb_error("Invalid PSK certificate usage.\n");
-    return false;
-  }
-  if (certificate->signed_data.key_version < minimum_version) {
-    avb_error("PSK rollback detected.\n");
     return false;
   }
   return true;
@@ -179,7 +167,8 @@ AvbIOResult avb_atx_validate_vbmeta_public_key(
   AvbAtxPublicKeyMetadata metadata;
   uint64_t minimum_version;
 
-  /* Be pessimistic so we can exit early without having to remember to clear. */
+  /* Be pessimistic so we can exit early without having to remember to clear.
+   */
   *out_is_trusted = false;
 
   /* Read and verify permanent attributes. */
@@ -240,27 +229,15 @@ AvbIOResult avb_atx_validate_vbmeta_public_key(
   }
 
   /* Verify the PSK is the same key that verified vbmeta. */
-  if (public_key_length != AVB_ATX_PUBLIC_KEY_SIZE_2048) {
+  if (public_key_length != AVB_ATX_PUBLIC_KEY_SIZE) {
     avb_error("Public key length mismatch.\n");
     return AVB_IO_RESULT_OK;
   }
   if (0 != avb_safe_memcmp(
                metadata.product_signing_key_certificate.signed_data.public_key,
                public_key_data,
-               AVB_ATX_PUBLIC_KEY_SIZE_2048)) {
+               AVB_ATX_PUBLIC_KEY_SIZE)) {
     avb_error("Public key mismatch.\n");
-    return AVB_IO_RESULT_OK;
-  }
-
-  /* Verify the GSK minimum version. */
-  result = ops->read_rollback_index(
-      ops, AVB_ATX_GSK_VERSION_LOCATION, &minimum_version);
-  if (result != AVB_IO_RESULT_OK) {
-    avb_error("Failed to read GSK minimum version.\n");
-    return result;
-  }
-  if (metadata.google_signing_key_version < minimum_version) {
-    avb_error("Google signing key rollback detected.\n");
     return AVB_IO_RESULT_OK;
   }
 
