@@ -63,8 +63,8 @@ TEST(UtilTest, FooterByteswap) {
   n64 = 0x1122334455667788;
 
   memcpy(h.magic, AVB_FOOTER_MAGIC, AVB_FOOTER_MAGIC_LEN);
-  h.version_major = htobe32(AVB_FOOTER_MAJOR_VERSION);
-  h.version_minor = htobe32(AVB_FOOTER_MINOR_VERSION);
+  h.version_major = htobe32(AVB_FOOTER_VERSION_MAJOR);
+  h.version_minor = htobe32(AVB_FOOTER_VERSION_MINOR);
   h.original_image_size = htobe64(n64);
   n64++;
   h.vbmeta_offset = htobe64(n64);
@@ -76,8 +76,8 @@ TEST(UtilTest, FooterByteswap) {
 
   n64 = 0x1122334455667788;
 
-  EXPECT_EQ((uint32_t)AVB_FOOTER_MAJOR_VERSION, s.version_major);
-  EXPECT_EQ((uint32_t)AVB_FOOTER_MINOR_VERSION, s.version_minor);
+  EXPECT_EQ((uint32_t)AVB_FOOTER_VERSION_MAJOR, s.version_major);
+  EXPECT_EQ((uint32_t)AVB_FOOTER_VERSION_MINOR, s.version_minor);
   EXPECT_EQ(n64, s.original_image_size);
   n64++;
   EXPECT_EQ(n64, s.vbmeta_offset);
@@ -88,7 +88,7 @@ TEST(UtilTest, FooterByteswap) {
   // Check that the struct still validates if minor is bigger than
   // what we expect.
   other = h;
-  h.version_minor = htobe32(AVB_FOOTER_MINOR_VERSION + 1);
+  h.version_minor = htobe32(AVB_FOOTER_VERSION_MINOR + 1);
   EXPECT_NE(0, avb_footer_validate_and_byteswap(&other, &s));
 
   // Check for bad magic.
@@ -98,7 +98,7 @@ TEST(UtilTest, FooterByteswap) {
 
   // Check for bad major version.
   bad = h;
-  bad.version_major = htobe32(AVB_FOOTER_MAJOR_VERSION + 1);
+  bad.version_major = htobe32(AVB_FOOTER_VERSION_MAJOR + 1);
   EXPECT_EQ(0, avb_footer_validate_and_byteswap(&bad, &s));
 }
 

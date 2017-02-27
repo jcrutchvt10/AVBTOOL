@@ -42,7 +42,10 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
 
   InitializeLib(ImageHandle, SystemTable);
 
-  avb_print("UEFI AVB-based bootloader\n");
+  avb_printv("UEFI AVB-based bootloader using libavb version ",
+             avb_version_string(),
+             "\n",
+             NULL);
 
   ops = uefi_avb_ops_new(ImageHandle);
   if (ops == NULL) {
@@ -68,8 +71,15 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
   switch (ab_result) {
     case AVB_AB_FLOW_RESULT_OK:
     case AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR:
-      avb_printv("slot_suffix: ", slot_data->ab_suffix, "\n", NULL);
-      avb_printv("cmdline:     ", slot_data->cmdline, "\n", NULL);
+      avb_printv("slot_suffix:    ", slot_data->ab_suffix, "\n", NULL);
+      avb_printv("cmdline:        ", slot_data->cmdline, "\n", NULL);
+      avb_printv(
+          "release string: ",
+          (const char*)((((AvbVBMetaImageHeader*)(slot_data->vbmeta_images[0]
+                                                      .vbmeta_data)))
+                            ->release_string),
+          "\n",
+          NULL);
       /* Pass 'skip_initramfs' since we're not booting into recovery
        * mode. Also pass the selected slot in androidboot.slot_suffix.
        */

@@ -153,41 +153,59 @@ application code.
 Applications using the compiled libavb_ab library must only include
 the libavb_ab/libavb_ab.h file for similar reasons.
 
--- COMPATIBILITY NOTES
+-- VERSIONING AND COMPATIBILITY
 
-The VBMeta structure (as defined in libavb/avb_vbmeta_header.h)
-guarantees forwards- and backwards-compatibility provided the major
-version does not change.
+AVB uses a version number with three fields - the major, minor, and
+sub version. Here's an example version number
 
-When backwards-compatible changes are made - for example, when a new
-field is added to AvbVBMetaImageHeader - the minor version will be
-bumped. At the same time, libavb will also be modified to test for the
-appropriate minor version before attempting to access the newly added
-field. This ensures that version 1.N of the library is able to read an
-old vbmeta image header produced with version 1.M where N > M.
+                       1.4.3
+                       ^ ^ ^
+                       | | |
+  the major version ---+ | |
+  the minor version -----+ |
+    the sub version -------+
 
-The usual scenario is that the code parsing the AvbVBMetaImageHeader
-rarely changes (it's usually in the firmware of a device and this
-firmware is rarely updated if ever), let's say it's fixed at version
-1.N. At the same time, the version of the avbtool used to produce the
-vbmeta image is rolling forward and is at version 1.M where M > N. The
-problem with this scenario is that version 1.M may easily and
-inadvertently introduce a seemingly compatible change that isn't. For
-example, consider if a new verification algorithm is added - in this
-case version 1.N of the reference implementation will fail at
-verification time when validating the |algorithm_field| of a 1.M image
-if it's set to the new algorithm.
+The major version number is bumped only if compatibility is broken,
+e.g. a struct field has been removed or changed. The minor version
+number is bumped only if a new feature is introduced, for example a
+new algorithm or descriptor has been added. The sub version number is
+bumped when bugs are fixed or other changes not affecting
+compatibility are made.
 
-The best approach for dealing with this problem is to always used a
-pinned version of avbtool (say, use version 1.N to generate images
-targeted for devices running version 1.N) for generating and signing
-images but sometimes this is not always possible nor
-desirable. Therefore, to avoid this compatibility problem, avbtool is
-designed to always take such input as a command-line argument so it
-can be kept constant by the caller. In other words, as long as you
-keep your command-line options passed to the avb tool the same, images
-produced by newer versions of avb will continue to work on the same
-version of the reference implementation.
+The VBMeta struct (as defined in libavb/avb_vbmeta_header.h) carries
+the major and minor version number of libavb required to verify the
+struct in question. This is stored in the |required_libavb_version_major|
+and |required_libavb_version_minor| fields.
+
+Additionally the VBMeta structure contains a textual field with the
+version of avbtool used to create the struct, for example "avbtool
+1.4.3" or "avbtool 1.4.3 some_board Git-4589fbec".
+
+Note that it's entirely possible to have a VBMeta struct with
+
+ required_libavb_version_major = 1
+ required_libavb_version_minor = 0
+ avbtool_release_string = "avbtool 1.4.3"
+
+if, for example, creating an image that do not use any features added
+after AVB version 1.0.
+
+-- ADDING NEW FEATURES
+
+If adding a new feature for example a new algorithm or a new
+descriptor then AVB_VERSION_MINOR in libavb/avb_version.h and avbtool
+must be bumped and AVB_VERSION_SUB should be set to zero.
+
+Unit tests MUST be added to check that
+
+ - The feature is used if - and only if - suitable commands/options
+   are passed to avbtool.
+
+ - The |required_version_minor| field is set to the bumped value if -
+   and only if - the feature is used.
+
+If AVB_VERSION_MINOR has already been bumped since the last release
+there is obviously no need to bump it again.
 
 -- USAGE
 
@@ -200,7 +218,8 @@ The content for the vbmeta partition can be generated as follows:
      [--include_descriptors_from_footer /path/to/image.bin]                     \
      [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--chain_partition part_name:rollback_index_location:/path/to/key1.bin]    \
-     [--signing_helper /path/to/external/signer]
+     [--signing_helper /path/to/external/signer]                                \
+     [--append_to_release_string STR]
 
 An integrity footer containing the hash for an entire partition can be
 added to an existing image as follows:
@@ -214,7 +233,8 @@ added to an existing image as follows:
      [--include_descriptors_from_footer /path/to/image.bin]                     \
      [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--output_vbmeta_image OUTPUT_IMAGE] [--do_not_append_vbmeta_image]        \
-     [--signing_helper /path/to/external/signer]
+     [--signing_helper /path/to/external/signer]                                \
+     [--append_to_release_string STR]
 
 An integrity footer containing the root digest and salt for a hashtree
 for a partition can be added to an existing image as follows. The
@@ -230,7 +250,8 @@ hashtree is also appended to the image.
      [--setup_rootfs_from_kernel /path/to/image.bin]                            \
      [--output_vbmeta_image OUTPUT_IMAGE] [--do_not_append_vbmeta_image]        \
      [--generate_fec] [--fec_num_roots FEC_NUM_ROOTS]                           \
-     [--signing_helper /path/to/external/signer]
+     [--signing_helper /path/to/external/signer]                                \
+     [--append_to_release_string STR]
 
 The integrity footer on an image can be removed from an image. The
 hashtree can optionally be kept in place.

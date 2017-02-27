@@ -74,7 +74,8 @@ LOCAL_SRC_FILES := \
     libavb/avb_slot_verify.c \
     libavb/avb_sysdeps_posix.c \
     libavb/avb_util.c \
-    libavb/avb_vbmeta_image.c
+    libavb/avb_vbmeta_image.c \
+    libavb/avb_version.c
 include $(BUILD_STATIC_LIBRARY)
 
 # Build libavb for the host (for unit tests).
@@ -101,7 +102,8 @@ LOCAL_SRC_FILES := \
     libavb/avb_sha512.c \
     libavb/avb_slot_verify.c \
     libavb/avb_util.c \
-    libavb/avb_vbmeta_image.c
+    libavb/avb_vbmeta_image.c \
+    libavb/avb_version.c
 include $(BUILD_HOST_STATIC_LIBRARY)
 
 # Build libavb_ab for the host (for unit tests).

@@ -49,7 +49,8 @@ typedef enum {
   AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION,
   AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX,
   AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED,
-  AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA
+  AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA,
+  AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION
 } AvbSlotVerifyResult;
 
 /* Get a textual representation of |result|. */
@@ -146,13 +147,13 @@ typedef struct {
  *   will end up pointing to the vbmeta partition for the verified
  *   slot.
  *
- *   androidboot.vbmeta.version: This is set to the decimal value of
- *   AVB_MAJOR_VERSION followed by a dot followed by the decimal value
- *   of AVB_MINOR_VERSION, for example "1.0". This version number
- *   represents the vbmeta file format version supported by libavb
- *   copy used in the boot loader. This is not necessarily the same
- *   version number of the on-disk metadata for the slot that was
- *   verified.
+ *   androidboot.vbmeta.avb_version: This is set to the decimal value
+ *   of AVB_VERSION_MAJOR followed by a dot followed by the decimal
+ *   value of AVB_VERSION_MINOR, for example "1.0" or "1.4". This
+ *   version number represents the vbmeta file format version
+ *   supported by libavb copy used in the boot loader. This is not
+ *   necessarily the same version number of the on-disk metadata for
+ *   the slot that was verified.
  *
  * Note that androidboot.slot_suffix is not set in |cmdline| - you
  * will have to pass this command-line option yourself.
@@ -235,6 +236,10 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
  *
  * AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA is returned if some
  * of the metadata is invalid or inconsistent.
+ *
+ * AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION is returned if
+ * some of the metadata requires a newer version of libavb than what
+ * is in use.
  */
 AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                     const char* const* requested_partitions,

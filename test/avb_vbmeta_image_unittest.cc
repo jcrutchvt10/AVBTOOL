@@ -152,10 +152,11 @@ TEST_F(VerifyTest, MajorVersionCheck) {
                       0,
                       base::FilePath("test/data/testkey_rsa2048.pem"));
 
+  // Bail if it's a different major version.
   AvbVBMetaImageHeader* h =
       reinterpret_cast<AvbVBMetaImageHeader*>(vbmeta_image_.data());
-  h->header_version_major = htobe32(1 + be32toh(h->header_version_major));
-  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER,
+  h->required_libavb_version_major = htobe32(1 + AVB_VERSION_MAJOR);
+  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_UNSUPPORTED_VERSION,
             avb_vbmeta_image_verify(
                 vbmeta_image_.data(), vbmeta_image_.size(), NULL, NULL));
 }
@@ -163,10 +164,25 @@ TEST_F(VerifyTest, MajorVersionCheck) {
 TEST_F(VerifyTest, MinorVersionCheck) {
   GenerateVBMetaImage("vbmeta.img", "", 0, base::FilePath(""));
 
+  // Bail if required_libavb_version_minor exceeds our libavb version.
   AvbVBMetaImageHeader* h =
       reinterpret_cast<AvbVBMetaImageHeader*>(vbmeta_image_.data());
-  h->header_version_minor = htobe32(1 + be32toh(h->header_version_minor));
-  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_OK_NOT_SIGNED,
+  h->required_libavb_version_minor = htobe32(1 + AVB_VERSION_MINOR);
+  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_UNSUPPORTED_VERSION,
+            avb_vbmeta_image_verify(
+                vbmeta_image_.data(), vbmeta_image_.size(), NULL, NULL));
+}
+
+TEST_F(VerifyTest, NulTerminatedReleaseString) {
+  GenerateVBMetaImage("vbmeta.img", "", 0, base::FilePath(""));
+
+  // Bail if |release_string| isn't NUL-terminated.
+  AvbVBMetaImageHeader* h =
+      reinterpret_cast<AvbVBMetaImageHeader*>(vbmeta_image_.data());
+  for (size_t n = 0; n < AVB_RELEASE_STRING_SIZE; n++) {
+    h->release_string[n] = 'a';
+  }
+  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER,
             avb_vbmeta_image_verify(
                 vbmeta_image_.data(), vbmeta_image_.size(), NULL, NULL));
 }
@@ -482,9 +498,9 @@ TEST_F(VerifyTest, VBMetaHeaderByteswap) {
   n32 = 0x11223344;
   n64 = 0x1122334455667788;
 
-  h.header_version_major = htobe32(n32);
+  h.required_libavb_version_major = htobe32(n32);
   n32++;
-  h.header_version_minor = htobe32(n32);
+  h.required_libavb_version_minor = htobe32(n32);
   n32++;
   h.authentication_data_block_size = htobe64(n64);
   n64++;
@@ -522,9 +538,9 @@ TEST_F(VerifyTest, VBMetaHeaderByteswap) {
   n32 = 0x11223344;
   n64 = 0x1122334455667788;
 
-  EXPECT_EQ(n32, s.header_version_major);
+  EXPECT_EQ(n32, s.required_libavb_version_major);
   n32++;
-  EXPECT_EQ(n32, s.header_version_minor);
+  EXPECT_EQ(n32, s.required_libavb_version_minor);
   n32++;
   EXPECT_EQ(n64, s.authentication_data_block_size);
   n64++;
@@ -560,7 +576,7 @@ TEST_F(VerifyTest, VBMetaHeaderByteswap) {
   // If new fields are added, the following will fail. This is to
   // remind that byteswapping code (in avb_util.c) and unittests for
   // this should be updated.
-  static_assert(offsetof(AvbVBMetaImageHeader, reserved) == 124,
+  static_assert(offsetof(AvbVBMetaImageHeader, reserved) == 176,
                 "Remember to unittest byteswapping of newly added fields");
 }
 
