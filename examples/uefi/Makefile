@@ -54,6 +54,7 @@ EFI_SRC_FILES = \
     $(AVB)/libavb/avb_slot_verify.c \
     $(AVB)/libavb/avb_util.c \
     $(AVB)/libavb/avb_vbmeta_image.c \
+    $(AVB)/libavb/avb_version.c \
     $(AVB)/libavb_ab/avb_ab_flow.c
 
 EFI_OBJ_FILES   = $(notdir $(patsubst %.S,%.o,$(patsubst %.c,%.o,$(EFI_SRC_FILES))))
