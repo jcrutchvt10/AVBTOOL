@@ -30,6 +30,7 @@
 #include "avb_sha.h"
 #include "avb_util.h"
 #include "avb_vbmeta_image.h"
+#include "avb_version.h"
 
 /* Maximum allow length (in bytes) of a partition name, including
  * ab_suffix.
@@ -54,6 +55,7 @@ static inline bool result_should_continue(AvbSlotVerifyResult result) {
     case AVB_SLOT_VERIFY_RESULT_ERROR_OOM:
     case AVB_SLOT_VERIFY_RESULT_ERROR_IO:
     case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
       return false;
 
     case AVB_SLOT_VERIFY_RESULT_OK:
@@ -365,6 +367,14 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
       avb_errorv(full_partition_name,
                  ": Error verifying vbmeta image: invalid vbmeta header\n",
+                 NULL);
+      goto out;
+
+    case AVB_VBMETA_VERIFY_RESULT_UNSUPPORTED_VERSION:
+      /* No way to continue this case. */
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION;
+      avb_errorv(full_partition_name,
+                 ": Error verifying vbmeta image: unsupported AVB version\n",
                  NULL);
       goto out;
   }
@@ -928,11 +938,11 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       goto fail;
     }
 
-    /* Add androidboot.vbmeta.version option. */
+    /* Add androidboot.vbmeta.avb_version option. */
     if (!cmdline_append_version(slot_data,
-                                "androidboot.vbmeta.version",
-                                AVB_MAJOR_VERSION,
-                                AVB_MINOR_VERSION)) {
+                                "androidboot.vbmeta.avb_version",
+                                AVB_VERSION_MAJOR,
+                                AVB_VERSION_MINOR)) {
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
       goto fail;
     }
@@ -1106,6 +1116,9 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result) {
       break;
     case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
       ret = "ERROR_INVALID_METADATA";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
+      ret = "ERROR_UNSUPPORTED_VERSION";
       break;
       /* Do not add a 'default:' case here because of -Wswitch. */
   }

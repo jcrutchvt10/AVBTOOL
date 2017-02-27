@@ -37,10 +37,13 @@ import time
 
 import Crypto.PublicKey.RSA
 
-# Keep in sync with avb_vbmeta_header.h.
+# Keep in sync with libavb/avb_version.h.
 AVB_VERSION_MAJOR = 1
 AVB_VERSION_MINOR = 0
+AVB_VERSION_SUB = 0
+
 AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED = 1
+
 
 class AvbError(Exception):
   """Application-specific errors.
@@ -171,6 +174,14 @@ ALGORITHMS = {
                 0x00, 0x04, 0x40
             ]),
 }
+
+
+def get_release_string():
+  """Calculates the release string to use in the VBMeta struct."""
+  # Keep in sync with libavb/avb_version.c:avb_version_string().
+  return 'avbtool {}.{}.{}'.format(AVB_VERSION_MAJOR,
+                                   AVB_VERSION_MINOR,
+                                   AVB_VERSION_SUB)
 
 
 def round_to_multiple(number, size):
@@ -391,17 +402,17 @@ def raw_sign(signing_helper, algorithm_name, key_path, raw_data_to_sign):
   """
   p = None
   if signing_helper is not None:
-      p = subprocess.Popen(
-          [signing_helper, algorithm_name, key_path],
-          stdin=subprocess.PIPE,
-          stdout=subprocess.PIPE,
-          stderr=subprocess.PIPE)
+    p = subprocess.Popen(
+        [signing_helper, algorithm_name, key_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
   else:
-      p = subprocess.Popen(
-          ['openssl', 'rsautl', '-sign', '-inkey', key_path, '-raw'],
-          stdin=subprocess.PIPE,
-          stdout=subprocess.PIPE,
-          stderr=subprocess.PIPE)
+    p = subprocess.Popen(
+        ['openssl', 'rsautl', '-sign', '-inkey', key_path, '-raw'],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
   (pout, perr) = p.communicate(str(raw_data_to_sign))
   retcode = p.wait()
   if retcode != 0:
@@ -1454,6 +1465,8 @@ class AvbFooter(object):
   MAGIC = 'AVBf'
   SIZE = 64
   RESERVED = 28
+  FOOTER_VERSION_MAJOR = 1
+  FOOTER_VERSION_MINOR = 0
   FORMAT_STRING = ('!4s2L'  # magic, 2 x version.
                    'Q'  # Original image size.
                    'Q'  # Offset of VBMeta blob.
@@ -1480,8 +1493,8 @@ class AvbFooter(object):
         raise LookupError('Given data does not look like a AVB footer.')
     else:
       self.magic = self.MAGIC
-      self.version_major = AVB_VERSION_MAJOR
-      self.version_minor = AVB_VERSION_MINOR
+      self.version_major = self.FOOTER_VERSION_MAJOR
+      self.version_minor = self.FOOTER_VERSION_MINOR
       self.original_image_size = 0
       self.vbmeta_offset = 0
       self.vbmeta_size = 0
@@ -1507,8 +1520,10 @@ class AvbVBMetaHeader(object):
 
   SIZE = 256
 
-  # Keep in sync with |reserved| field of |AvbVBMetaImageHeader|.
-  RESERVED = 132
+  # Keep in sync with |reserved0| and |reserved| field of
+  # |AvbVBMetaImageHeader|.
+  RESERVED0 = 4
+  RESERVED = 80
 
   # Keep in sync with |AvbVBMetaImageHeader|.
   FORMAT_STRING = ('!4s2L'  # magic, 2 x version
@@ -1521,6 +1536,8 @@ class AvbVBMetaHeader(object):
                    '2Q'  # offset, size (descriptors)
                    'Q'  # rollback_index
                    'L' +  # flags
+                   str(RESERVED0) + 'x' +  # padding for reserved bytes
+                   '47sx' +  # NUL-terminated release string
                    str(RESERVED) + 'x')  # padding for reserved bytes
 
   def __init__(self, data=None):
@@ -1535,7 +1552,8 @@ class AvbVBMetaHeader(object):
     assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
 
     if data:
-      (self.magic, self.header_version_major, self.header_version_minor,
+      (self.magic, self.required_libavb_version_major,
+       self.required_libavb_version_minor,
        self.authentication_data_block_size, self.auxiliary_data_block_size,
        self.algorithm_type, self.hash_offset, self.hash_size,
        self.signature_offset, self.signature_size, self.public_key_offset,
@@ -1543,14 +1561,18 @@ class AvbVBMetaHeader(object):
        self.public_key_metadata_size, self.descriptors_offset,
        self.descriptors_size,
        self.rollback_index,
-       self.flags) = struct.unpack(self.FORMAT_STRING, data)
+       self.flags,
+       self.release_string) = struct.unpack(self.FORMAT_STRING, data)
       # Nuke NUL-bytes at the end of the string.
       if self.magic != 'AVB0':
         raise AvbError('Given image does not look like a vbmeta image.')
     else:
       self.magic = 'AVB0'
-      self.header_version_major = AVB_VERSION_MAJOR
-      self.header_version_minor = AVB_VERSION_MINOR
+      # Start by just requiring version 1.0. Code that adds features
+      # in a future version can use bump_required_libavb_version_minor() to
+      # bump the minor.
+      self.required_libavb_version_major = AVB_VERSION_MAJOR
+      self.required_libavb_version_minor = 0
       self.authentication_data_block_size = 0
       self.auxiliary_data_block_size = 0
       self.algorithm_type = 0
@@ -1566,6 +1588,19 @@ class AvbVBMetaHeader(object):
       self.descriptors_size = 0
       self.rollback_index = 0
       self.flags = 0
+      self.release_string = get_release_string()
+
+  def bump_required_libavb_version_minor(self, minor):
+    """Function to bump required_libavb_version_minor.
+
+    Call this when writing data that requires a specific libavb
+    version to parse it.
+
+    Arguments:
+      minor: The minor version of libavb that has support for the feature.
+    """
+    self.required_libavb_version_minor = (
+        min(self.required_libavb_version_minor, minor))
 
   def save(self, output):
     """Serializes the header (256 bytes) to disk.
@@ -1574,14 +1609,14 @@ class AvbVBMetaHeader(object):
       output: The object to write the output to.
     """
     output.write(struct.pack(
-        self.FORMAT_STRING, self.magic, self.header_version_major,
-        self.header_version_minor, self.authentication_data_block_size,
+        self.FORMAT_STRING, self.magic, self.required_libavb_version_major,
+        self.required_libavb_version_minor, self.authentication_data_block_size,
         self.auxiliary_data_block_size, self.algorithm_type, self.hash_offset,
         self.hash_size, self.signature_offset, self.signature_size,
         self.public_key_offset, self.public_key_size,
         self.public_key_metadata_offset, self.public_key_metadata_size,
         self.descriptors_offset, self.descriptors_size, self.rollback_index,
-        self.flags))
+        self.flags, self.release_string))
 
   def encode(self):
     """Serializes the header (256) to a bytearray().
@@ -1590,14 +1625,16 @@ class AvbVBMetaHeader(object):
       A bytearray() with the encoded header.
     """
     return struct.pack(self.FORMAT_STRING, self.magic,
-                       self.header_version_major, self.header_version_minor,
+                       self.required_libavb_version_major,
+                       self.required_libavb_version_minor,
                        self.authentication_data_block_size,
                        self.auxiliary_data_block_size, self.algorithm_type,
                        self.hash_offset, self.hash_size, self.signature_offset,
                        self.signature_size, self.public_key_offset,
                        self.public_key_size, self.public_key_metadata_offset,
                        self.public_key_metadata_size, self.descriptors_offset,
-                       self.descriptors_size, self.rollback_index, self.flags)
+                       self.descriptors_size, self.rollback_index, self.flags,
+                       self.release_string)
 
 
 class Avb(object):
@@ -1719,8 +1756,9 @@ class Avb(object):
 
     (alg_name, _) = lookup_algorithm_by_type(header.algorithm_type)
 
-    o.write('VBMeta image version:     {}.{}{}\n'.format(
-        header.header_version_major, header.header_version_minor,
+    o.write('Minimum libavb version:   {}.{}{}\n'.format(
+        header.required_libavb_version_major,
+        header.required_libavb_version_minor,
         ' (Sparse)' if image.is_sparse else ''))
     o.write('Header Block:             {} bytes\n'.format(AvbVBMetaHeader.SIZE))
     o.write('Authentication Block:     {} bytes\n'.format(
@@ -1730,6 +1768,8 @@ class Avb(object):
     o.write('Algorithm:                {}\n'.format(alg_name))
     o.write('Rollback Index:           {}\n'.format(header.rollback_index))
     o.write('Flags:                    {}\n'.format(header.flags))
+    o.write('Release String:           \'{}\'\n'.format(
+        header.release_string.rstrip('\0')))
 
     # Print descriptors.
     num_printed = 0
@@ -1855,7 +1895,9 @@ class Avb(object):
                         key_path, public_key_metadata_path, rollback_index,
                         flags, props, props_from_file, kernel_cmdlines,
                         setup_rootfs_from_kernel,
-                        include_descriptors_from_image, signing_helper):
+                        include_descriptors_from_image, signing_helper,
+                        release_string,
+                        append_to_release_string):
     """Implements the 'make_vbmeta_image' command.
 
     Arguments:
@@ -1872,6 +1914,8 @@ class Avb(object):
       setup_rootfs_from_kernel: None or file to generate from.
       include_descriptors_from_image: List of file objects with descriptors.
       signing_helper: Program which signs a hash and return signature.
+      release_string: None or avbtool release string to use instead of default.
+      append_to_release_string: None or string to append.
 
     Raises:
       AvbError: If a chained partition is malformed.
@@ -1898,7 +1942,8 @@ class Avb(object):
         algorithm_name, key_path, public_key_metadata_path, descriptors,
         rollback_index, flags, props, props_from_file, kernel_cmdlines,
         setup_rootfs_from_kernel,
-        include_descriptors_from_image, signing_helper)
+        include_descriptors_from_image, signing_helper, release_string,
+        append_to_release_string)
 
     # Write entire vbmeta blob (header, authentication, auxiliary).
     output.seek(0)
@@ -1909,7 +1954,8 @@ class Avb(object):
                             rollback_index, flags, props, props_from_file,
                             kernel_cmdlines,
                             setup_rootfs_from_kernel,
-                            include_descriptors_from_image, signing_helper):
+                            include_descriptors_from_image, signing_helper,
+                            release_string, append_to_release_string):
     """Generates a VBMeta blob.
 
     This blob contains the header (struct AvbVBMetaHeader), the
@@ -1935,6 +1981,8 @@ class Avb(object):
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
       signing_helper: Program which signs a hash and return signature.
+      release_string: None or avbtool release string.
+      append_to_release_string: None or string to append.
 
     Returns:
       A bytearray() with the VBMeta blob.
@@ -2021,6 +2069,14 @@ class Avb(object):
 
     h = AvbVBMetaHeader()
 
+    # Override release string, if requested.
+    if isinstance(release_string, (str, unicode)):
+      h.release_string = release_string
+
+    # Append to release string, if requested. Also insert a space before.
+    if isinstance(append_to_release_string, (str, unicode)):
+      h.release_string += ' ' + append_to_release_string
+
     # For the Auxiliary data block, descriptors are stored at offset 0,
     # followed by the public key, followed by the public key metadata blob.
     h.auxiliary_data_block_size = round_to_multiple(
@@ -2102,6 +2158,7 @@ class Avb(object):
                       props_from_file, kernel_cmdlines,
                       setup_rootfs_from_kernel,
                       include_descriptors_from_image, signing_helper,
+                      release_string, append_to_release_string,
                       output_vbmeta_image, do_not_append_vbmeta_image):
     """Implementation of the add_hash_footer on unsparse images.
 
@@ -2123,6 +2180,8 @@ class Avb(object):
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
       signing_helper: Program which signs a hash and return signature.
+      release_string: None or avbtool release string.
+      append_to_release_string: None or string to append.
       output_vbmeta_image: If not None, also write vbmeta struct to this file.
       do_not_append_vbmeta_image: If True, don't append vbmeta struct.
 
@@ -2199,7 +2258,8 @@ class Avb(object):
           algorithm_name, key_path, public_key_metadata_path, [h_desc],
           rollback_index, flags, props, props_from_file, kernel_cmdlines,
           setup_rootfs_from_kernel,
-          include_descriptors_from_image, signing_helper)
+          include_descriptors_from_image, signing_helper, release_string,
+          append_to_release_string)
 
       # If the image isn't sparse, its size might not be a multiple of
       # the block size. This will screw up padding later so just grow it.
@@ -2256,6 +2316,7 @@ class Avb(object):
                           setup_rootfs_from_kernel,
                           include_descriptors_from_image,
                           calc_max_image_size, signing_helper,
+                          release_string, append_to_release_string,
                           output_vbmeta_image, do_not_append_vbmeta_image):
     """Implements the 'add_hashtree_footer' command.
 
@@ -2286,6 +2347,8 @@ class Avb(object):
         calculate the maximum image size leaving enough room for hashtree
         and metadata with the given |partition_size|.
       signing_helper: Program which signs a hash and return signature.
+      release_string: None or avbtool release string.
+      append_to_release_string: None or string to append.
       output_vbmeta_image: If not None, also write vbmeta struct to this file.
       do_not_append_vbmeta_image: If True, don't append vbmeta struct.
 
@@ -2424,7 +2487,8 @@ class Avb(object):
           algorithm_name, key_path, public_key_metadata_path, [ht_desc],
           rollback_index, flags, props, props_from_file, kernel_cmdlines,
           setup_rootfs_from_kernel,
-          include_descriptors_from_image, signing_helper)
+          include_descriptors_from_image, signing_helper, release_string,
+          append_to_release_string)
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
                         len(vbmeta_blob))
       vbmeta_blob_with_padding = vbmeta_blob + '\0'*padding_needed
@@ -2764,6 +2828,12 @@ class AvbTool(object):
                             help='Rollback Index',
                             type=parse_number,
                             default=0)
+    # This is used internally for unit tests. Do not include in --help output.
+    sub_parser.add_argument('--internal_release_string',
+                            help=argparse.SUPPRESS)
+    sub_parser.add_argument('--append_to_release_string',
+                            help='Text to append to release string',
+                            metavar='STR')
     sub_parser.add_argument('--prop',
                             help='Add property',
                             metavar='KEY:VALUE',
@@ -3026,7 +3096,7 @@ class AvbTool(object):
 
   def version(self, _):
     """Implements the 'version' sub-command."""
-    print '{}.{}'.format(AVB_VERSION_MAJOR, AVB_VERSION_MINOR)
+    print get_release_string()
 
   def extract_public_key(self, args):
     """Implements the 'extract_public_key' sub-command."""
@@ -3043,7 +3113,9 @@ class AvbTool(object):
                                args.kernel_cmdline,
                                args.setup_rootfs_from_kernel,
                                args.include_descriptors_from_image,
-                               args.signing_helper)
+                               args.signing_helper,
+                               args.internal_release_string,
+                               args.append_to_release_string)
 
   def add_hash_footer(self, args):
     """Implements the 'add_hash_footer' sub-command."""
@@ -3056,6 +3128,8 @@ class AvbTool(object):
                              args.setup_rootfs_from_kernel,
                              args.include_descriptors_from_image,
                              args.signing_helper,
+                             args.internal_release_string,
+                             args.append_to_release_string,
                              args.output_vbmeta_image,
                              args.do_not_append_vbmeta_image)
 
@@ -3074,9 +3148,10 @@ class AvbTool(object):
                                  args.setup_rootfs_from_kernel,
                                  args.include_descriptors_from_image,
                                  args.calc_max_image_size, args.signing_helper,
+                                 args.internal_release_string,
+                                 args.append_to_release_string,
                                  args.output_vbmeta_image,
                                  args.do_not_append_vbmeta_image)
-
 
   def erase_footer(self, args):
     """Implements the 'erase_footer' sub-command."""
