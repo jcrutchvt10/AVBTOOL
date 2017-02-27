@@ -1286,4 +1286,286 @@ TEST_F(AvbSlotVerifyTest, CmdlineWithHashtreeVerificationOn) {
   CmdlineWithHashtreeVerification(true);
 }
 
+// In the event that there's no vbmeta partition, we treat the vbmeta
+// struct from 'boot' as the top-level partition. Check that this
+// works.
+TEST_F(AvbSlotVerifyTest, NoVBMetaPartition) {
+  const size_t MiB = 1024 * 1024;
+  const size_t boot_size = 6 * MiB;
+  const size_t boot_part_size = 8 * MiB;
+  const size_t system_size = 16 * MiB;
+  const size_t system_part_size = 32 * MiB;
+  const size_t foobar_size = 8 * MiB;
+  const size_t foobar_part_size = 16 * MiB;
+  const size_t bazboo_size = 4 * MiB;
+  const size_t bazboo_part_size = 8 * MiB;
+  base::FilePath boot_path = GenerateImage("boot.img", boot_size);
+  base::FilePath system_path = GenerateImage("system.img", system_size);
+  base::FilePath foobar_path = GenerateImage("foobar.img", foobar_size);
+  base::FilePath bazboo_path = GenerateImage("bazboo.img", bazboo_size);
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name system "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\"",
+                 system_path.value().c_str(),
+                 (int)system_part_size);
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name foobar "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\"",
+                 foobar_path.value().c_str(),
+                 (int)foobar_part_size);
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name bazboo "
+                 "--algorithm SHA512_RSA4096 "
+                 "--key test/data/testkey_rsa4096.pem "
+                 "--internal_release_string \"\"",
+                 bazboo_path.value().c_str(),
+                 (int)bazboo_part_size);
+
+  base::FilePath pk_path = testdir_.Append("testkey_rsa4096.avbpubkey");
+  EXPECT_COMMAND(
+      0,
+      "./avbtool extract_public_key --key test/data/testkey_rsa4096.pem"
+      " --output %s",
+      pk_path.value().c_str());
+
+  // Explicitly pass "--flags 2147483648" (i.e. 1<<31) to check that
+  // boot.img is treated as top-level. Note the corresponding "Flags:"
+  // field below in the avbtool info_image output.
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer --salt d00df00d "
+                 "--hash_algorithm sha256 --image %s "
+                 "--partition_size %d --partition_name boot "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\" "
+                 "--include_descriptors_from_image %s "
+                 "--include_descriptors_from_image %s "
+                 "--setup_rootfs_from_kernel %s "
+                 "--chain_partition bazboo:1:%s "
+                 "--flags 2147483648",
+                 boot_path.value().c_str(),
+                 (int)boot_part_size,
+                 system_path.value().c_str(),
+                 foobar_path.value().c_str(),
+                 system_path.value().c_str(),
+                 pk_path.value().c_str());
+
+  ASSERT_EQ(
+      "Footer version:           1.0\n"
+      "Image size:               8388608 bytes\n"
+      "Original image size:      6291456 bytes\n"
+      "VBMeta offset:            6291456\n"
+      "VBMeta size:              3200 bytes\n"
+      "--\n"
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          2624 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           0\n"
+      "Flags:                    2147483648\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Hash descriptor:\n"
+      "      Image Size:            6291456 bytes\n"
+      "      Hash Algorithm:        sha256\n"
+      "      Partition Name:        boot\n"
+      "      Salt:                  d00df00d\n"
+      "      Digest:                "
+      "4c109399b20e476bab15363bff55740add83e1c1e97e0b132f5c713ddd8c7868\n"
+      "    Chain Partition descriptor:\n"
+      "      Partition Name:          bazboo\n"
+      "      Rollback Index Location: 1\n"
+      "      Public key (sha1):       "
+      "2597c218aae470a130f61162feaae70afd97f011\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 1\n"
+      "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 32768 verity 1 "
+      "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
+      "4096 4096 4096 4096 sha1 c9ffc3bfae5000269a55a56621547fd1fcf819df "
+      "d00df00d 2 restart_on_corruption ignore_zero_blocks\" root=0xfd00'\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 2\n"
+      "      Kernel Cmdline:        "
+      "'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'\n"
+      "    Hashtree descriptor:\n"
+      "      Version of dm-verity:  1\n"
+      "      Image Size:            16777216 bytes\n"
+      "      Tree Offset:           16777216\n"
+      "      Tree Size:             135168 bytes\n"
+      "      Data Block Size:       4096 bytes\n"
+      "      Hash Block Size:       4096 bytes\n"
+      "      FEC num roots:         0\n"
+      "      FEC offset:            0\n"
+      "      FEC size:              0 bytes\n"
+      "      Hash Algorithm:        sha1\n"
+      "      Partition Name:        system\n"
+      "      Salt:                  d00df00d\n"
+      "      Root Digest:           c9ffc3bfae5000269a55a56621547fd1fcf819df\n"
+      "    Hashtree descriptor:\n"
+      "      Version of dm-verity:  1\n"
+      "      Image Size:            8388608 bytes\n"
+      "      Tree Offset:           8388608\n"
+      "      Tree Size:             69632 bytes\n"
+      "      Data Block Size:       4096 bytes\n"
+      "      Hash Block Size:       4096 bytes\n"
+      "      FEC num roots:         0\n"
+      "      FEC offset:            0\n"
+      "      FEC size:              0 bytes\n"
+      "      Hash Algorithm:        sha1\n"
+      "      Partition Name:        foobar\n"
+      "      Salt:                  d00df00d\n"
+      "      Root Digest:           d52d93c988d336a79abe1c05240ae9a79a9b7d61\n",
+      InfoImage(boot_path));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  // Now check that libavb will fall back to reading from 'boot'
+  // instead of 'vbmeta' when encountering
+  // AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION on trying to read from
+  // 'vbmeta'.
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            false /* allow_verification_error */,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  // Note 'boot' in the value androidboot.vbmeta.device since we've
+  // read from 'boot' and not 'vbmeta'.
+  EXPECT_EQ(
+      "dm=\"1 vroot none ro 1,0 32768 verity 1 "
+      "PARTUUID=1234-fake-guid-for:system PARTUUID=1234-fake-guid-for:system "
+      "4096 4096 4096 4096 sha1 c9ffc3bfae5000269a55a56621547fd1fcf819df "
+      "d00df00d 2 restart_on_corruption ignore_zero_blocks\" root=0xfd00 "
+      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:boot "
+      "androidboot.vbmeta.avb_version=1.0 "
+      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=5312 "
+      "androidboot.vbmeta.digest="
+      "403b4071873ca54187ca2c33e314edf3049ccb6cfadf518d7f6a509fce3d18b3",
+      std::string(slot_data->cmdline));
+  avb_slot_verify_data_free(slot_data);
+}
+
+// Check that non-zero flags in chained partition are caught in
+// avb_slot_verify().
+TEST_F(AvbSlotVerifyTest, ChainedPartitionEnforceFlagsZero) {
+  size_t boot_partition_size = 16 * 1024 * 1024;
+  const size_t boot_image_size = 5 * 1024 * 1024;
+  base::FilePath boot_path = GenerateImage("boot_a.img", boot_image_size);
+  const char* requested_partitions[] = {"boot", NULL};
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --image %s"
+                 " --kernel_cmdline 'cmdline2 in hash footer'"
+                 " --rollback_index 12"
+                 " --partition_name boot"
+                 " --partition_size %zd"
+                 " --algorithm SHA256_RSA4096"
+                 " --key test/data/testkey_rsa4096.pem"
+                 " --salt deadbeef"
+                 " --flags 1"
+                 " --internal_release_string \"\"",
+                 boot_path.value().c_str(),
+                 boot_partition_size);
+
+  base::FilePath pk_path = testdir_.Append("testkey_rsa4096.avbpubkey");
+  EXPECT_COMMAND(
+      0,
+      "./avbtool extract_public_key --key test/data/testkey_rsa4096.pem"
+      " --output %s",
+      pk_path.value().c_str());
+
+  GenerateVBMetaImage(
+      "vbmeta_a.img",
+      "SHA256_RSA2048",
+      11,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf("--chain_partition boot:1:%s"
+                         " --kernel_cmdline 'cmdline2 in vbmeta'"
+                         " --internal_release_string \"\"",
+                         pk_path.value().c_str()));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  AvbSlotVerifyData* slot_data = NULL;
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            false /* allow_verification_error */,
+                            &slot_data));
+  EXPECT_EQ(nullptr, slot_data);
+}
+
+// Check that chain descriptors in chained partitions are caught in
+// avb_slot_verify().
+TEST_F(AvbSlotVerifyTest, ChainedPartitionEnforceNoChainPartitions) {
+  size_t boot_partition_size = 16 * 1024 * 1024;
+  const size_t boot_image_size = 5 * 1024 * 1024;
+  base::FilePath boot_path = GenerateImage("boot_a.img", boot_image_size);
+  const char* requested_partitions[] = {"boot", NULL};
+
+  base::FilePath pk_path = testdir_.Append("testkey_rsa4096.avbpubkey");
+  EXPECT_COMMAND(
+      0,
+      "./avbtool extract_public_key --key test/data/testkey_rsa4096.pem"
+      " --output %s",
+      pk_path.value().c_str());
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --image %s"
+                 " --kernel_cmdline 'cmdline2 in hash footer'"
+                 " --rollback_index 12"
+                 " --partition_name boot"
+                 " --partition_size %zd"
+                 " --algorithm SHA256_RSA4096"
+                 " --key test/data/testkey_rsa4096.pem"
+                 " --salt deadbeef"
+                 " --chain_partition other:2:%s"
+                 " --internal_release_string \"\"",
+                 boot_path.value().c_str(),
+                 boot_partition_size,
+                 pk_path.value().c_str());
+
+  GenerateVBMetaImage(
+      "vbmeta_a.img",
+      "SHA256_RSA2048",
+      11,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf("--chain_partition boot:1:%s"
+                         " --kernel_cmdline 'cmdline2 in vbmeta'"
+                         " --internal_release_string \"\"",
+                         pk_path.value().c_str()));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  AvbSlotVerifyData* slot_data = NULL;
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            false /* allow_verification_error */,
+                            &slot_data));
+  EXPECT_EQ(nullptr, slot_data);
+}
+
 }  // namespace avb
