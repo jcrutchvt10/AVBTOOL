@@ -69,7 +69,7 @@ TEST_F(AvbSlotVerifyTest, Basic) {
   EXPECT_NE(nullptr, slot_data);
   EXPECT_EQ(
       "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
-      "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1152 "
       "androidboot.vbmeta.digest="
       "4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d",
@@ -97,7 +97,7 @@ TEST_F(AvbSlotVerifyTest, BasicSha512) {
   EXPECT_NE(nullptr, slot_data);
   EXPECT_EQ(
       "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
-      "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha512 androidboot.vbmeta.size=1152 "
       "androidboot.vbmeta.digest="
       "cb913d2f1a884f4e04c1db5bb181f3133fd16ac02fb367a20ef0776c0b07b3656ad1f081"
@@ -128,7 +128,7 @@ TEST_F(AvbSlotVerifyTest, BasicUnlocked) {
   EXPECT_NE(nullptr, slot_data);
   EXPECT_EQ(
       "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
-      "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=unlocked "
+      "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=unlocked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1152 "
       "androidboot.vbmeta.digest="
       "4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d",
@@ -428,7 +428,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
       "cmdline in vbmeta 1234-fake-guid-for:boot_a cmdline in hash footer "
       "1234-fake-guid-for:system_a "
       "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
-      "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1472 "
       "androidboot.vbmeta.digest="
       "34cdb59b955aa35d4da97701f304fabf7392eecca8c50ff1a0b7b6e1c9aaa1b8",
@@ -658,7 +658,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
   EXPECT_EQ(
       "cmdline2 in hash footer cmdline2 in vbmeta "
       "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
-      "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=4416 "
       "androidboot.vbmeta.digest="
       "4a45faa9adfeb94e9154fe682c11fef1a1a3d829b67cbf1a12ac7f0aa4f8e2e4",
@@ -968,12 +968,11 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
   }
 
   // This should match the two cmdlines with a space (U+0020) between
-  // them - note that androidboot.slot_suffix is not set since we
-  // don't have any slots in this setup.
+  // them.
   EXPECT_EQ(
       "cmdline2 in hash footer cmdline2 in vbmeta "
       "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta "
-      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=4416 "
       "androidboot.vbmeta.digest="
       "4a45faa9adfeb94e9154fe682c11fef1a1a3d829b67cbf1a12ac7f0aa4f8e2e4",
@@ -1114,7 +1113,7 @@ TEST_F(AvbSlotVerifyTest, PublicKeyMetadata) {
   EXPECT_NE(nullptr, slot_data);
   EXPECT_EQ(
       "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
-      "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=2688 "
       "androidboot.vbmeta.digest="
       "5edcaa54f40382ee6a2fc3b86cdf383348b35ed07955e83ea32d84b69a97eaa0",
@@ -1214,7 +1213,7 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
         "restart_on_corruption ignore_zero_blocks\" root=0xfd00 "
         "should_be_in_both=1 "
         "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
-        "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+        "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=locked "
         "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1472 "
         "androidboot.vbmeta.digest="
         "32572f7a89fb44cc76e9e3adbc0cb5272d0604578b2179729aa52d2bba4061c3",
@@ -1223,7 +1222,7 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
     EXPECT_EQ(
         "root=PARTUUID=1234-fake-guid-for:system_a should_be_in_both=1 "
         "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
-        "androidboot.slot_suffix=_a androidboot.vbmeta.device_state=locked "
+        "androidboot.vbmeta.version=1.0 androidboot.vbmeta.device_state=locked "
         "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1472 "
         "androidboot.vbmeta.digest="
         "bb630c27d09e10117092d4444ea57a99bf44101c46cf5424cfb86928a0873249",

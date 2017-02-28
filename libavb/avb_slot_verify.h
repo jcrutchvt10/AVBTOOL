@@ -138,10 +138,6 @@ typedef struct {
  *   depending on the result of the result of AvbOps's
  *   read_is_unlocked() function.
  *
- *   androidboot.slot_suffix: If |ab_suffix| as passed into
- *   avb_slot_verify() is non-empty, this variable will be set to its
- *   value.
- *
  *   androidboot.vbmeta.{hash_alg, size, digest}: Will be set to
  *   the digest of all images in |vbmeta_images|.
  *
@@ -149,6 +145,17 @@ typedef struct {
  *   PARTUUID=$(ANDROID_VBMETA_PARTUUID) before substitution so it
  *   will end up pointing to the vbmeta partition for the verified
  *   slot.
+ *
+ *   androidboot.vbmeta.version: This is set to the decimal value of
+ *   AVB_MAJOR_VERSION followed by a dot followed by the decimal value
+ *   of AVB_MINOR_VERSION, for example "1.0". This version number
+ *   represents the vbmeta file format version supported by libavb
+ *   copy used in the boot loader. This is not necessarily the same
+ *   version number of the on-disk metadata for the slot that was
+ *   verified.
+ *
+ * Note that androidboot.slot_suffix is not set in |cmdline| - you
+ * will have to pass this command-line option yourself.
  *
  * This struct may grow in the future without it being considered an
  * ABI break.
