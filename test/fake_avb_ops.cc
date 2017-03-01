@@ -67,7 +67,11 @@ AvbIOResult FakeAvbOps::read_from_partition(const char* partition,
             "Error opening file '%s': %s\n",
             path.value().c_str(),
             strerror(errno));
-    return AVB_IO_RESULT_ERROR_IO;
+    if (errno == ENOENT) {
+      return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
+    } else {
+      return AVB_IO_RESULT_ERROR_IO;
+    }
   }
   if (lseek(fd, offset, SEEK_SET) != offset) {
     fprintf(stderr,
@@ -121,7 +125,11 @@ AvbIOResult FakeAvbOps::write_to_partition(const char* partition,
             "Error opening file '%s': %s\n",
             path.value().c_str(),
             strerror(errno));
-    return AVB_IO_RESULT_ERROR_IO;
+    if (errno == ENOENT) {
+      return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
+    } else {
+      return AVB_IO_RESULT_ERROR_IO;
+    }
   }
   if (lseek(fd, offset, SEEK_SET) != offset) {
     fprintf(stderr,
