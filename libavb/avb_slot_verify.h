@@ -108,8 +108,10 @@ typedef struct {
  * The VBMeta images that were checked are available in the
  * |vbmeta_images| field. The field |num_vbmeta_images| contains the
  * number of elements in this array. The first element -
- * vbmeta_images[0] - is guaranteed to be from the "vbmeta" partition
- * in the requested slot.
+ * vbmeta_images[0] - is guaranteed to be from the partition with the
+ * top-level vbmeta struct. This is usually the "vbmeta" partition in
+ * the requested slot but if there is no "vbmeta" partition it can
+ * also be the "boot" partition.
  *
  * The partitions loaded and verified from from the slot are
  * accessible in the |loaded_partitions| array. The field
@@ -145,7 +147,8 @@ typedef struct {
  *   androidboot.vbmeta.device: This is set to the value
  *   PARTUUID=$(ANDROID_VBMETA_PARTUUID) before substitution so it
  *   will end up pointing to the vbmeta partition for the verified
- *   slot.
+ *   slot. If there is no vbmeta partition it will point to the boot
+ *   partition of the verified slot.
  *
  *   androidboot.vbmeta.avb_version: This is set to the decimal value
  *   of AVB_VERSION_MAJOR followed by a dot followed by the decimal
