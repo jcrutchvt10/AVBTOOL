@@ -42,8 +42,8 @@ namespace {
 const char kMetadataPath[] = "test/data/atx_metadata.bin";
 const char kPermanentAttributesPath[] =
     "test/data/atx_permanent_attributes.bin";
-const char kPRKPrivateKeyPath[] = "test/data/testkey_rsa4096.pem";
-const char kPIKPrivateKeyPath[] = "test/data/testkey_rsa2048.pem";
+const char kPRKPrivateKeyPath[] = "test/data/testkey_atx_prk.pem";
+const char kPIKPrivateKeyPath[] = "test/data/testkey_atx_pik.pem";
 
 class ScopedRSA {
  public:
@@ -59,24 +59,16 @@ class ScopedRSA {
     }
   }
 
-  // PKCS #1 v1.5 signature using SHA512 if |rsa_| is 4096 bits, SHA256
-  // otherwise. Returns true on success.
+  // PKCS #1 v1.5 signature using SHA512. Returns true on success.
   bool Sign(const void* data_to_sign, size_t length, uint8_t signature[]) {
-    bool use_sha512 = (RSA_size(rsa_) == AVB_RSA4096_NUM_BYTES);
     uint8_t digest[AVB_SHA512_DIGEST_SIZE];
-    unsigned int digest_size =
-        use_sha512 ? AVB_SHA512_DIGEST_SIZE : AVB_SHA256_DIGEST_SIZE;
     const unsigned char* data_to_sign_buf =
         reinterpret_cast<const unsigned char*>(data_to_sign);
-    if (use_sha512) {
-      SHA512(data_to_sign_buf, length, digest);
-    } else {
-      SHA256(data_to_sign_buf, length, digest);
-    }
+    SHA512(data_to_sign_buf, length, digest);
     unsigned int signature_length = 0;
-    return (1 == RSA_sign(use_sha512 ? NID_sha512 : NID_sha256,
+    return (1 == RSA_sign(NID_sha512,
                           digest,
-                          digest_size,
+                          AVB_SHA512_DIGEST_SIZE,
                           signature,
                           &signature_length,
                           rsa_));
@@ -98,9 +90,8 @@ class AvbAtxValidateTest : public ::testing::Test, public FakeAvbOpsDelegate {
     ReadDefaultData();
     ops_.set_delegate(this);
     ops_.set_permanent_attributes(attributes_);
-    ops_.set_stored_rollback_indexes({{AVB_ATX_PIK_VERSION_LOCATION, 0},
-                                      {AVB_ATX_PSK_VERSION_LOCATION, 0},
-                                      {AVB_ATX_GSK_VERSION_LOCATION, 0}});
+    ops_.set_stored_rollback_indexes(
+        {{AVB_ATX_PIK_VERSION_LOCATION, 0}, {AVB_ATX_PSK_VERSION_LOCATION, 0}});
   }
 
   // FakeAvbOpsDelegate methods.
@@ -137,9 +128,7 @@ class AvbAtxValidateTest : public ::testing::Test, public FakeAvbOpsDelegate {
     if ((fail_read_pik_rollback_index_ &&
          rollback_index_slot == AVB_ATX_PIK_VERSION_LOCATION) ||
         (fail_read_psk_rollback_index_ &&
-         rollback_index_slot == AVB_ATX_PSK_VERSION_LOCATION) ||
-        (fail_read_gsk_rollback_index_ &&
-         rollback_index_slot == AVB_ATX_GSK_VERSION_LOCATION)) {
+         rollback_index_slot == AVB_ATX_PSK_VERSION_LOCATION)) {
       return AVB_IO_RESULT_ERROR_IO;
     }
     return ops_.read_rollback_index(
@@ -188,7 +177,7 @@ class AvbAtxValidateTest : public ::testing::Test, public FakeAvbOpsDelegate {
     return avb_atx_validate_vbmeta_public_key(
         ops_.avb_ops(),
         metadata_.product_signing_key_certificate.signed_data.public_key,
-        AVB_ATX_PUBLIC_KEY_SIZE_2048,
+        AVB_ATX_PUBLIC_KEY_SIZE,
         reinterpret_cast<const uint8_t*>(&metadata_),
         sizeof(metadata_),
         is_trusted);
@@ -208,7 +197,7 @@ class AvbAtxValidateTest : public ::testing::Test, public FakeAvbOpsDelegate {
   void SignPSKCertificate() {
     memset(metadata_.product_signing_key_certificate.signature,
            0,
-           AVB_RSA2048_NUM_BYTES);
+           AVB_RSA4096_NUM_BYTES);
     ScopedRSA key(kPIKPrivateKeyPath);
     ASSERT_TRUE(key.Sign(&metadata_.product_signing_key_certificate.signed_data,
                          sizeof(AvbAtxCertificateSignedData),
@@ -222,7 +211,6 @@ class AvbAtxValidateTest : public ::testing::Test, public FakeAvbOpsDelegate {
   bool fail_read_permanent_attributes_hash_{false};
   bool fail_read_pik_rollback_index_{false};
   bool fail_read_psk_rollback_index_{false};
-  bool fail_read_gsk_rollback_index_{false};
 
  private:
   void ReadDefaultData() {
@@ -251,7 +239,7 @@ TEST_F(AvbAtxValidateTest, SuccessAfterNewSign) {
   std::string old_psk_sig(
       reinterpret_cast<char*>(
           metadata_.product_signing_key_certificate.signature),
-      AVB_RSA2048_NUM_BYTES);
+      AVB_RSA4096_NUM_BYTES);
   SignPIKCertificate();
   SignPSKCertificate();
   std::string new_pik_sig(
@@ -261,7 +249,7 @@ TEST_F(AvbAtxValidateTest, SuccessAfterNewSign) {
   std::string new_psk_sig(
       reinterpret_cast<char*>(
           metadata_.product_signing_key_certificate.signature),
-      AVB_RSA2048_NUM_BYTES);
+      AVB_RSA4096_NUM_BYTES);
   EXPECT_EQ(old_pik_sig, new_pik_sig);
   EXPECT_EQ(old_psk_sig, new_psk_sig);
   bool is_trusted = false;
@@ -307,7 +295,7 @@ class AvbAtxValidateTestWithMetadataLength
     return avb_atx_validate_vbmeta_public_key(
         ops_.avb_ops(),
         metadata_.product_signing_key_certificate.signed_data.public_key,
-        AVB_ATX_PUBLIC_KEY_SIZE_2048,
+        AVB_ATX_PUBLIC_KEY_SIZE,
         reinterpret_cast<const uint8_t*>(&metadata_),
         GetParam(),
         is_trusted);
@@ -407,8 +395,7 @@ TEST_F(AvbAtxValidateTest, PIKRollback) {
       {{AVB_ATX_PIK_VERSION_LOCATION,
         metadata_.product_intermediate_key_certificate.signed_data.key_version +
             1},
-       {AVB_ATX_PSK_VERSION_LOCATION, 0},
-       {AVB_ATX_GSK_VERSION_LOCATION, 0}});
+       {AVB_ATX_PSK_VERSION_LOCATION, 0}});
   bool is_trusted = true;
   EXPECT_EQ(AVB_IO_RESULT_OK, Validate(&is_trusted));
   EXPECT_FALSE(is_trusted);
@@ -484,8 +471,8 @@ TEST_F(AvbAtxValidateTest, PSKRollback) {
   ops_.set_stored_rollback_indexes(
       {{AVB_ATX_PIK_VERSION_LOCATION, 0},
        {AVB_ATX_PSK_VERSION_LOCATION,
-        metadata_.product_signing_key_certificate.signed_data.key_version + 1},
-       {AVB_ATX_GSK_VERSION_LOCATION, 0}});
+        metadata_.product_signing_key_certificate.signed_data.key_version +
+            1}});
   bool is_trusted = true;
   EXPECT_EQ(AVB_IO_RESULT_OK, Validate(&is_trusted));
   EXPECT_FALSE(is_trusted);
@@ -518,40 +505,22 @@ INSTANTIATE_TEST_CASE_P(P,
                         AvbAtxValidateTestWithPublicKeyLength,
                         ::testing::Values(0,
                                           1,
-                                          AVB_ATX_PUBLIC_KEY_SIZE_2048 - 1,
-                                          AVB_ATX_PUBLIC_KEY_SIZE_2048 + 1,
-                                          AVB_ATX_PUBLIC_KEY_SIZE_4096,
+                                          AVB_ATX_PUBLIC_KEY_SIZE - 1,
+                                          AVB_ATX_PUBLIC_KEY_SIZE + 1,
+                                          AVB_ATX_PUBLIC_KEY_SIZE - 512,
                                           -1));
 
 TEST_F(AvbAtxValidateTest, PSKMismatch) {
-  uint8_t bad_key[AVB_ATX_PUBLIC_KEY_SIZE_2048] = {};
+  uint8_t bad_key[AVB_ATX_PUBLIC_KEY_SIZE] = {};
   bool is_trusted = true;
   EXPECT_EQ(AVB_IO_RESULT_OK,
             avb_atx_validate_vbmeta_public_key(
                 ops_.avb_ops(),
                 bad_key,
-                AVB_ATX_PUBLIC_KEY_SIZE_2048,
+                AVB_ATX_PUBLIC_KEY_SIZE,
                 reinterpret_cast<const uint8_t*>(&metadata_),
                 sizeof(metadata_),
                 &is_trusted));
-  EXPECT_FALSE(is_trusted);
-}
-
-TEST_F(AvbAtxValidateTest, FailReadGSKRollbackIndex) {
-  fail_read_gsk_rollback_index_ = true;
-  bool is_trusted = true;
-  EXPECT_EQ(AVB_IO_RESULT_ERROR_IO, Validate(&is_trusted));
-  EXPECT_FALSE(is_trusted);
-}
-
-TEST_F(AvbAtxValidateTest, GSKRollback) {
-  ops_.set_stored_rollback_indexes(
-      {{AVB_ATX_PIK_VERSION_LOCATION, 0},
-       {AVB_ATX_PSK_VERSION_LOCATION, 0},
-       {AVB_ATX_GSK_VERSION_LOCATION,
-        metadata_.google_signing_key_version + 1}});
-  bool is_trusted = true;
-  EXPECT_EQ(AVB_IO_RESULT_OK, Validate(&is_trusted));
   EXPECT_FALSE(is_trusted);
 }
 
@@ -571,8 +540,7 @@ class AvbAtxSlotVerifyTest : public BaseAvbToolTest, public FakeAvbOpsDelegate {
                                       {2, 0},
                                       {3, 0},
                                       {AVB_ATX_PIK_VERSION_LOCATION, 0},
-                                      {AVB_ATX_PSK_VERSION_LOCATION, 0},
-                                      {AVB_ATX_GSK_VERSION_LOCATION, 0}});
+                                      {AVB_ATX_PSK_VERSION_LOCATION, 0}});
     ops_.set_stored_is_device_unlocked(false);
   }
 
@@ -665,13 +633,13 @@ TEST_F(AvbAtxSlotVerifyTest, SlotVerifyWithAtx) {
   std::string metadata_option = "--public_key_metadata=";
   metadata_option += kMetadataPath;
   GenerateVBMetaImage("vbmeta_a.img",
-                      "SHA256_RSA2048",
+                      "SHA512_RSA4096",
                       0,
-                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      base::FilePath("test/data/testkey_atx_psk.pem"),
                       metadata_option);
 
   ops_.set_expected_public_key(
-      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+      PublicKeyAVB(base::FilePath("test/data/testkey_atx_psk.pem")));
 
   AvbSlotVerifyData* slot_data = NULL;
   const char* requested_partitions[] = {"boot", NULL};
