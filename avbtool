@@ -2570,14 +2570,8 @@ class Avb(object):
     signature = bytearray()
     if authority_key_path:
       padding_and_hash = bytearray()
-      algorithm_name = None
-      hasher = None
-      if is_intermediate_authority:
-        hasher = hashlib.sha512()
-        algorithm_name = 'SHA512_RSA4096'
-      else:
-        hasher = hashlib.sha256()
-        algorithm_name = 'SHA256_RSA2048'
+      algorithm_name = 'SHA512_RSA4096'
+      hasher = hashlib.sha512()
       padding_and_hash.extend(ALGORITHMS[algorithm_name].padding)
       hasher.update(signed_data)
       padding_and_hash.extend(hasher.digest())
@@ -2602,14 +2596,15 @@ class Avb(object):
     Raises:
       AvbError: If an argument is incorrect.
     """
-    if len(product_id) != 16:
+    EXPECTED_PRODUCT_ID_SIZE = 16
+    if len(product_id) != EXPECTED_PRODUCT_ID_SIZE:
       raise AvbError('Invalid Product ID length.')
     output.write(struct.pack('<I', 1))  # Format Version
     write_rsa_key(output, Crypto.PublicKey.RSA.importKey(root_authority_key))
     output.write(product_id)
 
   def make_atx_metadata(self, output, intermediate_key_certificate,
-                        product_key_certificate, google_key_version):
+                        product_key_certificate):
     """Implements the 'make_atx_metadata' command.
 
     Android Things metadata are included in vbmeta images to facilitate
@@ -2624,20 +2619,18 @@ class Avb(object):
       product_key_certificate: A certificate file as output by
                                make_atx_certificate with
                                is_intermediate_authority set to false.
-      google_key_version: The version of the Google Signing Key used in the
-                          associated vbmeta image.
 
     Raises:
       AvbError: If an argument is incorrect.
     """
-    if len(intermediate_key_certificate) != 1108:
+    EXPECTED_CERTIFICATE_SIZE = 1620
+    if len(intermediate_key_certificate) != EXPECTED_CERTIFICATE_SIZE:
       raise AvbError('Invalid intermediate key certificate length.')
-    if len(product_key_certificate) != 852:
+    if len(product_key_certificate) != EXPECTED_CERTIFICATE_SIZE:
       raise AvbError('Invalid product key certificate length.')
     output.write(struct.pack('<I', 1))  # Format Version
     output.write(intermediate_key_certificate)
     output.write(product_key_certificate)
-    output.write(struct.pack('<Q', google_key_version))
 
 
 def calc_hash_level_offsets(image_size, block_size, digest_size):
@@ -3098,10 +3091,6 @@ class AvbTool(object):
                             help='Path to product key certificate file',
                             type=argparse.FileType('rb'),
                             required=True)
-    sub_parser.add_argument('--google_key_version',
-                            help=('Version of the Google signing key'),
-                            type=parse_number,
-                            default=0)
     sub_parser.set_defaults(func=self.make_atx_metadata)
 
     args = parser.parse_args(argv[1:])
@@ -3203,8 +3192,7 @@ class AvbTool(object):
     """Implements the 'make_atx_metadata' sub-command."""
     self.avb.make_atx_metadata(args.output,
                                args.intermediate_key_certificate.read(),
-                               args.product_key_certificate.read(),
-                               args.google_key_version)
+                               args.product_key_certificate.read())
 
 
 if __name__ == '__main__':

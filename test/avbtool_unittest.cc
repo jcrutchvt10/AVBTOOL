@@ -1424,21 +1424,24 @@ TEST_F(AvbToolTest, SigningHelperReturnError) {
 }
 
 TEST_F(AvbToolTest, MakeAtxPikCertificate) {
+  base::FilePath subject_path = testdir_.Append("tmp_subject");
+  ASSERT_TRUE(base::WriteFile(subject_path, "fake PIK subject", 16));
   base::FilePath pubkey_path = testdir_.Append("tmp_pubkey.pem");
   EXPECT_COMMAND(
       0,
-      "openssl pkey -pubout -in test/data/testkey_rsa2048.pem -out %s",
+      "openssl pkey -pubout -in test/data/testkey_atx_pik.pem -out %s",
       pubkey_path.value().c_str());
 
   base::FilePath output_path = testdir_.Append("tmp_certificate.bin");
   EXPECT_COMMAND(0,
                  "./avbtool make_atx_certificate"
-                 " --subject test/data/small_blob.bin"
+                 " --subject %s"
                  " --subject_key %s"
                  " --subject_key_version 42"
                  " --subject_is_intermediate_authority"
-                 " --authority_key test/data/testkey_rsa4096.pem"
+                 " --authority_key test/data/testkey_atx_prk.pem"
                  " --output %s",
+                 subject_path.value().c_str(),
                  pubkey_path.value().c_str(),
                  output_path.value().c_str());
 
@@ -1451,7 +1454,7 @@ TEST_F(AvbToolTest, MakeAtxPskCertificate) {
   base::FilePath pubkey_path = testdir_.Append("tmp_pubkey.pem");
   EXPECT_COMMAND(
       0,
-      "openssl pkey -pubout -in test/data/testkey_rsa2048.pem -out %s",
+      "openssl pkey -pubout -in test/data/testkey_atx_psk.pem -out %s",
       pubkey_path.value().c_str());
 
   base::FilePath output_path = testdir_.Append("tmp_certificate.bin");
@@ -1460,7 +1463,7 @@ TEST_F(AvbToolTest, MakeAtxPskCertificate) {
                  " --subject test/data/atx_product_id.bin"
                  " --subject_key %s"
                  " --subject_key_version 42"
-                 " --authority_key test/data/testkey_rsa2048.pem"
+                 " --authority_key test/data/testkey_atx_pik.pem"
                  " --output %s",
                  pubkey_path.value().c_str(),
                  output_path.value().c_str());
@@ -1474,7 +1477,7 @@ TEST_F(AvbToolTest, MakeAtxPermanentAttributes) {
   base::FilePath pubkey_path = testdir_.Append("tmp_pubkey.pem");
   EXPECT_COMMAND(
       0,
-      "openssl pkey -pubout -in test/data/testkey_rsa4096.pem -out %s",
+      "openssl pkey -pubout -in test/data/testkey_atx_prk.pem -out %s",
       pubkey_path.value().c_str());
 
   base::FilePath output_path = testdir_.Append("tmp_attributes.bin");
@@ -1499,7 +1502,6 @@ TEST_F(AvbToolTest, MakeAtxMetadata) {
       "./avbtool make_atx_metadata"
       " --intermediate_key_certificate test/data/atx_pik_certificate.bin"
       " --product_key_certificate test/data/atx_psk_certificate.bin"
-      " --google_key_version 42"
       " --output %s",
       output_path.value().c_str());
 
