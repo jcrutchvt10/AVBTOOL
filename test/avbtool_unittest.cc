@@ -1391,6 +1391,69 @@ TEST_F(AvbToolTest, ChainedPartition) {
                         d.public_key_len));
 }
 
+TEST_F(AvbToolTest, AppendVBMetaImage) {
+  size_t boot_size = 5 * 1024 * 1024;
+  size_t boot_partition_size = 32 * 1024 * 1024;
+  base::FilePath boot_path = GenerateImage("boot", boot_size);
+
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      std::string("--append_to_release_string \"\" "
+                                  "--kernel_cmdline foo"));
+
+  EXPECT_COMMAND(0,
+                 "./avbtool append_vbmeta_image "
+                 "--image %s "
+                 "--partition_size %d "
+                 "--vbmeta_image %s ",
+                 boot_path.value().c_str(),
+                 (int)boot_partition_size,
+                 vbmeta_image_path_.value().c_str());
+
+  std::string vbmeta_contents = InfoImage(vbmeta_image_path_);
+  std::string boot_contents = InfoImage(boot_path);
+
+  // Check that boot.img has the same vbmeta blob as from vbmeta.img -
+  // we do this by inspecting 'avbtool info_image' output combined
+  // with the known footer location given boot.img has 5 MiB known
+  // content and the partition size is 32 MiB.
+  ASSERT_EQ(
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          576 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           0\n"
+      "Flags:                    0\n"
+      "Release String:           'avbtool 1.0.0 '\n"
+      "Descriptors:\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
+      "      Kernel Cmdline:        'foo'\n",
+      vbmeta_contents);
+  std::string known_footer =
+      "Footer version:           1.0\n"
+      "Image size:               33554432 bytes\n"
+      "Original image size:      5242880 bytes\n"
+      "VBMeta offset:            5242880\n"
+      "VBMeta size:              1152 bytes\n"
+      "--\n";
+  ASSERT_EQ(known_footer + vbmeta_contents, boot_contents);
+
+  // Also verify that the blobs are the same, bit for bit.
+  base::File f =
+      base::File(boot_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  std::vector<uint8_t> loaded_vbmeta;
+  loaded_vbmeta.resize(1152);
+  EXPECT_EQ(
+      f.Read(
+          5 * 1024 * 1024, reinterpret_cast<char*>(loaded_vbmeta.data()), 1152),
+      1152);
+  EXPECT_EQ(vbmeta_image_, loaded_vbmeta);
+}
+
 TEST_F(AvbToolTest, SigningHelperBasic) {
   base::FilePath vbmeta_path = testdir_.Append("vbmeta.bin");
   base::FilePath signing_helper_test_path =
