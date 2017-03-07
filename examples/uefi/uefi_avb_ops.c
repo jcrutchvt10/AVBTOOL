@@ -194,8 +194,9 @@ static AvbIOResult read_from_partition(AvbOps* ops,
     return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
   }
 
-  partition_size = (partition_entry->last_lba - partition_entry->first_lba) *
-                   data->block_io->Media->BlockSize;
+  partition_size =
+      (partition_entry->last_lba - partition_entry->first_lba + 1) *
+      data->block_io->Media->BlockSize;
 
   if (offset_from_partition < 0) {
     if ((-offset_from_partition) > partition_size) {
