@@ -1819,6 +1819,39 @@ class Avb(object):
 
     return footer, h, descriptors, image.image_size
 
+  def _load_vbmeta_blob(self, image):
+    """Gets the vbmeta struct and associated sections.
+
+    The image can either be a vbmeta.img or an image with a footer.
+
+    Arguments:
+      image: An ImageHandler (vbmeta or footer).
+
+    Returns:
+      A blob with the vbmeta struct and other sections.
+    """
+    assert isinstance(image, ImageHandler)
+    footer = None
+    image.seek(image.image_size - AvbFooter.SIZE)
+    try:
+      footer = AvbFooter(image.read(AvbFooter.SIZE))
+    except (LookupError, struct.error):
+      # Nope, just seek back to the start.
+      image.seek(0)
+
+    vbmeta_offset = 0
+    if footer:
+      vbmeta_offset = footer.vbmeta_offset
+
+    image.seek(vbmeta_offset)
+    h = AvbVBMetaHeader(image.read(AvbVBMetaHeader.SIZE))
+
+    image.seek(vbmeta_offset)
+    data_size = AvbVBMetaHeader.SIZE
+    data_size += h.authentication_data_block_size
+    data_size += h.auxiliary_data_block_size
+    return image.read(data_size)
+
   def _get_cmdline_descriptors_for_dm_verity(self, image):
     """Generate kernel cmdline descriptors for dm-verity.
 
@@ -2154,6 +2187,84 @@ class Avb(object):
     """
     key = Crypto.PublicKey.RSA.importKey(open(key_path).read())
     write_rsa_key(output, key)
+
+  def append_vbmeta_image(self, image_filename, vbmeta_image_filename,
+                          partition_size):
+    """Implementation of the append_vbmeta_image command.
+
+    Arguments:
+      image_filename: File to add the footer to.
+      vbmeta_image_filename: File to get vbmeta struct from.
+      partition_size: Size of partition.
+
+    Raises:
+      AvbError: If an argument is incorrect.
+    """
+    image = ImageHandler(image_filename)
+
+    if partition_size % image.block_size != 0:
+      raise AvbError('Partition size of {} is not a multiple of the image '
+                     'block size {}.'.format(partition_size,
+                                             image.block_size))
+
+    # If there's already a footer, truncate the image to its original
+    # size. This way 'avbtool append_vbmeta_image' is idempotent.
+    image.seek(image.image_size - AvbFooter.SIZE)
+    try:
+      footer = AvbFooter(image.read(AvbFooter.SIZE))
+      # Existing footer found. Just truncate.
+      original_image_size = footer.original_image_size
+      image.truncate(footer.original_image_size)
+    except (LookupError, struct.error):
+      original_image_size = image.image_size
+
+    # If anything goes wrong from here-on, restore the image back to
+    # its original size.
+    try:
+      vbmeta_image_handler = ImageHandler(vbmeta_image_filename)
+      vbmeta_blob = self._load_vbmeta_blob(vbmeta_image_handler)
+
+      # If the image isn't sparse, its size might not be a multiple of
+      # the block size. This will screw up padding later so just grow it.
+      if image.image_size % image.block_size != 0:
+        assert not image.is_sparse
+        padding_needed = image.block_size - (image.image_size%image.block_size)
+        image.truncate(image.image_size + padding_needed)
+
+      # The append_raw() method requires content with size being a
+      # multiple of |block_size| so add padding as needed. Also record
+      # where this is written to since we'll need to put that in the
+      # footer.
+      vbmeta_offset = image.image_size
+      padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
+                        len(vbmeta_blob))
+      vbmeta_blob_with_padding = vbmeta_blob + '\0'*padding_needed
+
+      # Append vbmeta blob and footer
+      image.append_raw(vbmeta_blob_with_padding)
+      vbmeta_end_offset = vbmeta_offset + len(vbmeta_blob_with_padding)
+
+      # Now insert a DONT_CARE chunk with enough bytes such that the
+      # final Footer block is at the end of partition_size..
+      image.append_dont_care(partition_size - vbmeta_end_offset -
+                             1*image.block_size)
+
+      # Generate the Footer that tells where the VBMeta footer
+      # is. Also put enough padding in the front of the footer since
+      # we'll write out an entire block.
+      footer = AvbFooter()
+      footer.original_image_size = original_image_size
+      footer.vbmeta_offset = vbmeta_offset
+      footer.vbmeta_size = len(vbmeta_blob)
+      footer_blob = footer.encode()
+      footer_blob_with_padding = ('\0'*(image.block_size - AvbFooter.SIZE) +
+                                  footer_blob)
+      image.append_raw(footer_blob_with_padding)
+
+    except:
+      # Truncate back to original size, then re-raise
+      image.truncate(original_image_size)
+      raise
 
   def add_hash_footer(self, image_filename, partition_size, partition_name,
                       hash_algorithm, salt, chain_partitions, algorithm_name,
@@ -2941,6 +3052,20 @@ class AvbTool(object):
     self._add_common_args(sub_parser)
     sub_parser.set_defaults(func=self.add_hash_footer)
 
+    sub_parser = subparsers.add_parser('append_vbmeta_image',
+                                       help='Append vbmeta image to image.')
+    sub_parser.add_argument('--image',
+                            help='Image to append vbmeta blob to',
+                            type=argparse.FileType('rab+'))
+    sub_parser.add_argument('--partition_size',
+                            help='Partition size',
+                            type=parse_number,
+                            required=True)
+    sub_parser.add_argument('--vbmeta_image',
+                            help='Image with vbmeta blob to append',
+                            type=argparse.FileType('rb'))
+    sub_parser.set_defaults(func=self.append_vbmeta_image)
+
     sub_parser = subparsers.add_parser('add_hashtree_footer',
                                        help='Add hashtree and footer to image.')
     sub_parser.add_argument('--image',
@@ -3121,6 +3246,11 @@ class AvbTool(object):
                                args.signing_helper,
                                args.internal_release_string,
                                args.append_to_release_string)
+
+  def append_vbmeta_image(self, args):
+    """Implements the 'append_vbmeta_image' sub-command."""
+    self.avb.append_vbmeta_image(args.image.name, args.vbmeta_image.name,
+                                 args.partition_size)
 
   def add_hash_footer(self, args):
     """Implements the 'add_hash_footer' sub-command."""

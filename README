@@ -283,6 +283,17 @@ Here's an example invocation:
 
  /path/to/my_signing_program SHA256_RSA2048 /path/to/publickey.pem
 
+The 'append_vbmeta_image' command can be used to append an entire
+vbmeta blob to the end of another image. This is useful for cases when
+not using any vbmeta partitions, for example:
+
+  $ cp boot.img boot-with-vbmeta-appended.img
+  $ avbtool append_vbmeta_image                      \
+     --image boot-with-vbmeta-appended.img           \
+     --partition_size SIZE_OF_BOOT_PARTITION         \
+     --vbmeta_image vbmeta.img
+  $ fastboot flash boot boot-with-vbmeta-appended.img
+
 -- BUILD SYSTEM INTEGRATION NOTES
 
 Android Verified Boot is enabled by the BOARD_AVB_ENABLE variable
