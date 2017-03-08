@@ -28,7 +28,17 @@
 
 #include <libavb/libavb.h>
 
-TEST(UtilTest, RSAPublicKeyHeaderByteswap) {
+#include "avb_unittest_util.h"
+
+namespace avb {
+
+// Subclass BaseAvbToolTest to check for memory leaks.
+class UtilTest : public BaseAvbToolTest {
+ public:
+  UtilTest() {}
+};
+
+TEST_F(UtilTest, RSAPublicKeyHeaderByteswap) {
   AvbRSAPublicKeyHeader h;
   AvbRSAPublicKeyHeader s;
   uint32_t n32;
@@ -53,7 +63,7 @@ TEST(UtilTest, RSAPublicKeyHeaderByteswap) {
   n32++;
 }
 
-TEST(UtilTest, FooterByteswap) {
+TEST_F(UtilTest, FooterByteswap) {
   AvbFooter h;
   AvbFooter s;
   AvbFooter other;
@@ -102,7 +112,7 @@ TEST(UtilTest, FooterByteswap) {
   EXPECT_EQ(0, avb_footer_validate_and_byteswap(&bad, &s));
 }
 
-TEST(UtilTest, KernelCmdlineDescriptorByteswap) {
+TEST_F(UtilTest, KernelCmdlineDescriptorByteswap) {
   AvbKernelCmdlineDescriptor h;
   AvbKernelCmdlineDescriptor s;
   AvbKernelCmdlineDescriptor bad;
@@ -140,7 +150,7 @@ TEST(UtilTest, KernelCmdlineDescriptorByteswap) {
   EXPECT_EQ(0, avb_kernel_cmdline_descriptor_validate_and_byteswap(&bad, &s));
 }
 
-TEST(UtilTest, HashtreeDescriptorByteswap) {
+TEST_F(UtilTest, HashtreeDescriptorByteswap) {
   AvbHashtreeDescriptor h;
   AvbHashtreeDescriptor s;
   AvbHashtreeDescriptor bad;
@@ -229,7 +239,7 @@ TEST(UtilTest, HashtreeDescriptorByteswap) {
   EXPECT_FALSE(avb_hashtree_descriptor_validate_and_byteswap(&bad, &s));
 }
 
-TEST(UtilTest, HashDescriptorByteswap) {
+TEST_F(UtilTest, HashDescriptorByteswap) {
   AvbHashDescriptor h;
   AvbHashDescriptor s;
   AvbHashDescriptor bad;
@@ -272,7 +282,7 @@ TEST(UtilTest, HashDescriptorByteswap) {
   EXPECT_EQ(0, avb_hash_descriptor_validate_and_byteswap(&bad, &s));
 }
 
-TEST(UtilTest, ChainPartitionDescriptorByteswap) {
+TEST_F(UtilTest, ChainPartitionDescriptorByteswap) {
   AvbChainPartitionDescriptor h;
   AvbChainPartitionDescriptor s;
   AvbChainPartitionDescriptor bad;
@@ -315,7 +325,7 @@ TEST(UtilTest, ChainPartitionDescriptorByteswap) {
   EXPECT_EQ(0, avb_chain_partition_descriptor_validate_and_byteswap(&bad, &s));
 }
 
-TEST(UtilTest, PropertyDescriptorByteswap) {
+TEST_F(UtilTest, PropertyDescriptorByteswap) {
   AvbPropertyDescriptor h;
   AvbPropertyDescriptor s;
   AvbPropertyDescriptor bad;
@@ -351,7 +361,7 @@ TEST(UtilTest, PropertyDescriptorByteswap) {
   EXPECT_EQ(0, avb_property_descriptor_validate_and_byteswap(&bad, &s));
 }
 
-TEST(UtilTest, DescriptorByteswap) {
+TEST_F(UtilTest, DescriptorByteswap) {
   AvbDescriptor h;
   AvbDescriptor s;
   uint64_t n64;
@@ -377,7 +387,7 @@ TEST(UtilTest, DescriptorByteswap) {
   EXPECT_EQ(0, avb_descriptor_validate_and_byteswap(&h, &s));
 }
 
-TEST(UtilTest, SafeAddition) {
+TEST_F(UtilTest, SafeAddition) {
   uint64_t value;
   uint64_t pow2_60 = 1ULL << 60;
 
@@ -411,7 +421,7 @@ static int avb_validate_utf8z(const char* data) {
                            strlen(data));
 }
 
-TEST(UtilTest, UTF8Validation) {
+TEST_F(UtilTest, UTF8Validation) {
   // These should succeed.
   EXPECT_NE(0, avb_validate_utf8z("foo bar"));
   // Encoding of U+00E6 LATIN SMALL LETTER AE: æ
@@ -430,7 +440,7 @@ TEST(UtilTest, UTF8Validation) {
   EXPECT_EQ(0, avb_validate_utf8z("foo \xC3"));
 }
 
-TEST(UtilTest, StrConcat) {
+TEST_F(UtilTest, StrConcat) {
   char buf[8];
 
   // These should succeed.
@@ -440,7 +450,7 @@ TEST(UtilTest, StrConcat) {
   EXPECT_EQ(0, avb_str_concat(buf, sizeof buf, "foo0", 4, "bar1", 4));
 }
 
-TEST(UtilTest, StrStr) {
+TEST_F(UtilTest, StrStr) {
   const char* haystack = "abc def abcabc";
 
   EXPECT_EQ(nullptr, avb_strstr(haystack, "needle"));
@@ -449,7 +459,7 @@ TEST(UtilTest, StrStr) {
   EXPECT_EQ(haystack, avb_strstr(haystack, haystack));
 }
 
-TEST(UtilTest, StrvFindStr) {
+TEST_F(UtilTest, StrvFindStr) {
   const char* strings[] = {"abcabc", "abc", "def", nullptr};
 
   EXPECT_EQ(nullptr, avb_strv_find_str(strings, "not there", 9));
@@ -458,26 +468,43 @@ TEST(UtilTest, StrvFindStr) {
   EXPECT_EQ(strings[0], avb_strv_find_str(strings, "abcabc", 6));
 }
 
-TEST(UtilTest, StrReplace) {
-  // We don't care about leaking strings from avb_replace().
-  EXPECT_EQ("OK blah bah $(FOO OK blah",
-            std::string(avb_replace(
-                "$(FOO) blah bah $(FOO $(FOO) blah", "$(FOO)", "OK")));
-  EXPECT_EQ("OK", std::string(avb_replace("$(FOO)", "$(FOO)", "OK")));
-  EXPECT_EQ(" OK", std::string(avb_replace(" $(FOO)", "$(FOO)", "OK")));
-  EXPECT_EQ("OK ", std::string(avb_replace("$(FOO) ", "$(FOO)", "OK")));
-  EXPECT_EQ("LONGSTRINGLONGSTRING",
-            std::string(avb_replace("$(FOO)$(FOO)", "$(FOO)", "LONGSTRING")));
+TEST_F(UtilTest, StrReplace) {
+  char* str;
+
+  str = avb_replace("$(FOO) blah bah $(FOO $(FOO) blah", "$(FOO)", "OK");
+  EXPECT_EQ("OK blah bah $(FOO OK blah", std::string(str));
+  avb_free(str);
+
+  str = avb_replace("$(FOO)", "$(FOO)", "OK");
+  EXPECT_EQ("OK", std::string(str));
+  avb_free(str);
+
+  str = avb_replace(" $(FOO)", "$(FOO)", "OK");
+  EXPECT_EQ(" OK", std::string(str));
+  avb_free(str);
+
+  str = avb_replace("$(FOO) ", "$(FOO)", "OK");
+  EXPECT_EQ("OK ", std::string(str));
+  avb_free(str);
+
+  str = avb_replace("$(FOO)$(FOO)", "$(FOO)", "LONGSTRING");
+  EXPECT_EQ("LONGSTRINGLONGSTRING", std::string(str));
+  avb_free(str);
 }
 
-TEST(UtilTest, StrDupV) {
-  // We don't care about leaking avb_strdupv() result.
-  EXPECT_EQ("xyz", std::string(avb_strdupv("x", "y", "z", NULL)));
-  EXPECT_EQ("HelloWorld XYZ",
-            std::string(avb_strdupv("Hello", "World", " XYZ", NULL)));
+TEST_F(UtilTest, StrDupV) {
+  char* str;
+
+  str = avb_strdupv("x", "y", "z", NULL);
+  EXPECT_EQ("xyz", std::string(str));
+  avb_free(str);
+
+  str = avb_strdupv("Hello", "World", " XYZ", NULL);
+  EXPECT_EQ("HelloWorld XYZ", std::string(str));
+  avb_free(str);
 }
 
-TEST(UtilTest, Crc32) {
+TEST_F(UtilTest, Crc32) {
   /* Compare with output of crc32(1):
    *
    *  $ (echo -n foobar > /tmp/crc32_input); crc32 /tmp/crc32_input
@@ -486,18 +513,20 @@ TEST(UtilTest, Crc32) {
   EXPECT_EQ(uint32_t(0x9ef61f95), avb_crc32((const uint8_t*)"foobar", 6));
 }
 
-TEST(UtilTest, htobe32) {
+TEST_F(UtilTest, htobe32) {
   EXPECT_EQ(avb_htobe32(0x12345678), htobe32(0x12345678));
 }
 
-TEST(UtilTest, be32toh) {
+TEST_F(UtilTest, be32toh) {
   EXPECT_EQ(avb_be32toh(0x12345678), be32toh(0x12345678));
 }
 
-TEST(UtilTest, htobe64) {
+TEST_F(UtilTest, htobe64) {
   EXPECT_EQ(avb_htobe64(0x123456789abcdef0), htobe64(0x123456789abcdef0));
 }
 
-TEST(UtilTest, be64toh) {
+TEST_F(UtilTest, be64toh) {
   EXPECT_EQ(avb_be64toh(0x123456789abcdef0), be64toh(0x123456789abcdef0));
 }
+
+}  // namespace avb
