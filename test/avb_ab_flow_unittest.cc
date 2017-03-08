@@ -42,7 +42,13 @@ static_assert(sizeof(AvbABData) == AVB_AB_DATA_SIZE,
 static_assert(offsetof(AvbABData, slots) % 8 == 0,
               "AvbABData slots member has wrong offset");
 
-TEST(ABTest, InitData) {
+// Subclass BaseAvbToolTest to check for memory leaks.
+class ABTest : public BaseAvbToolTest {
+ public:
+  ABTest() {}
+};
+
+TEST_F(ABTest, InitData) {
   AvbABData data;
   avb_ab_data_init(&data);
   EXPECT_EQ(0,
@@ -58,7 +64,7 @@ TEST(ABTest, InitData) {
   EXPECT_EQ(uint32_t(0), data.crc32);
 }
 
-TEST(ABTest, DataSerialization) {
+TEST_F(ABTest, DataSerialization) {
   AvbABData data;
   AvbABData serialized;
   AvbABData restored;
@@ -78,7 +84,7 @@ TEST(ABTest, DataSerialization) {
                    sizeof(AvbABSlotData) * 2));
 }
 
-TEST(ABTest, CatchBadCRC) {
+TEST_F(ABTest, CatchBadCRC) {
   AvbABData data;
   AvbABData serialized;
   AvbABData restored;
@@ -89,7 +95,7 @@ TEST(ABTest, CatchBadCRC) {
   EXPECT_FALSE(avb_ab_data_verify_and_byteswap(&serialized, &restored));
 }
 
-TEST(ABTest, CatchUnsupportedMajorVersion) {
+TEST_F(ABTest, CatchUnsupportedMajorVersion) {
   AvbABData data;
   AvbABData serialized;
   AvbABData restored;
@@ -100,7 +106,7 @@ TEST(ABTest, CatchUnsupportedMajorVersion) {
   EXPECT_FALSE(avb_ab_data_verify_and_byteswap(&serialized, &restored));
 }
 
-TEST(ABTest, SupportSameMajorFutureMinorVersion) {
+TEST_F(ABTest, SupportSameMajorFutureMinorVersion) {
   AvbABData data;
   AvbABData serialized;
   AvbABData restored;
