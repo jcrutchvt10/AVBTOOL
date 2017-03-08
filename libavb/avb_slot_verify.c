@@ -765,7 +765,6 @@ static char* sub_cmdline(AvbOps* ops,
   for (size_t n = 0; n < NUM_GUIDS; n++) {
     char part_name[PART_NAME_MAX_SIZE];
     char guid_buf[37];
-    char* new_ret;
 
     if (!avb_str_concat(part_name,
                         sizeof part_name,
@@ -787,14 +786,15 @@ static char* sub_cmdline(AvbOps* ops,
     }
 
     if (ret == NULL) {
-      new_ret = avb_replace(cmdline, replace_str[n], guid_buf);
+      ret = avb_replace(cmdline, replace_str[n], guid_buf);
     } else {
-      new_ret = avb_replace(ret, replace_str[n], guid_buf);
+      char* new_ret = avb_replace(ret, replace_str[n], guid_buf);
+      avb_free(ret);
+      ret = new_ret;
     }
-    if (new_ret == NULL) {
+    if (ret == NULL) {
       goto fail;
     }
-    ret = new_ret;
   }
 
   return ret;

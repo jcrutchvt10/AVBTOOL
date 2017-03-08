@@ -50,6 +50,11 @@ std::string mem_to_hexstring(const uint8_t* data, size_t len);
 
 namespace avb {
 
+// These two functions are in avb_sysdeps_posix_testing.cc and is
+// used for finding memory leaks.
+void testing_memory_reset();
+size_t testing_memory_all_freed();
+
 /* Base-class used for unit test. */
 class BaseAvbToolTest : public ::testing::Test {
  public:
@@ -136,19 +141,23 @@ class BaseAvbToolTest : public ::testing::Test {
     return key_data;
   }
 
-  /* Create temporary directory to stash images in. */
   virtual void SetUp() override {
+    /* Create temporary directory to stash images in. */
     base::FilePath ret;
     char* buf = strdup("/tmp/libavb-tests.XXXXXX");
     ASSERT_TRUE(mkdtemp(buf) != nullptr);
     testdir_ = base::FilePath(buf);
     free(buf);
+    /* Reset memory leak tracing */
+    avb::testing_memory_reset();
   }
 
-  /* Nuke temporary directory. */
   virtual void TearDown() override {
+    /* Nuke temporary directory. */
     ASSERT_EQ(0U, testdir_.value().find("/tmp/libavb-tests"));
     ASSERT_TRUE(base::DeleteFile(testdir_, true /* recursive */));
+    /* Ensure all memory has been freed. */
+    EXPECT_TRUE(avb::testing_memory_all_freed());
   }
 
   /* Temporary directory created in SetUp(). */
