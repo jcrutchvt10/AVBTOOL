@@ -386,3 +386,18 @@ char* avb_strdupv(const char* str, ...) {
 out:
   return ret;
 }
+
+const char* avb_basename(const char* str) {
+  int64_t n;
+  size_t len;
+
+  len = avb_strlen(str);
+  if (len >= 2) {
+    for (n = len - 2; n >= 0; n--) {
+      if (str[n] == '/') {
+        return str + n + 1;
+      }
+    }
+  }
+  return str;
+}
