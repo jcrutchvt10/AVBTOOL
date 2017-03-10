@@ -529,4 +529,16 @@ TEST_F(UtilTest, be64toh) {
   EXPECT_EQ(avb_be64toh(0x123456789abcdef0), be64toh(0x123456789abcdef0));
 }
 
+TEST_F(UtilTest, Basename) {
+  EXPECT_EQ("foobar.c", std::string(avb_basename("foobar.c")));
+  EXPECT_EQ("foobar.c", std::string(avb_basename("/path/to/foobar.c")));
+  EXPECT_EQ("foobar.c", std::string(avb_basename("a/foobar.c")));
+  EXPECT_EQ("baz.c", std::string(avb_basename("/baz.c")));
+  EXPECT_EQ("some_dir/", std::string(avb_basename("some_dir/")));
+  EXPECT_EQ("some_dir/", std::string(avb_basename("/path/to/some_dir/")));
+  EXPECT_EQ("some_dir/", std::string(avb_basename("a/some_dir/")));
+  EXPECT_EQ("some_dir/", std::string(avb_basename("/some_dir/")));
+  EXPECT_EQ("/", std::string(avb_basename("/")));
+}
+
 }  // namespace avb
