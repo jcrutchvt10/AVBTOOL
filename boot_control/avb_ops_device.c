@@ -41,18 +41,13 @@
  * that's what's being used.
  */
 static struct fstab* open_fstab(void) {
-  char propbuf[PROPERTY_VALUE_MAX];
-  char fstab_name[PROPERTY_VALUE_MAX + 32];
-  struct fstab* fstab;
+  struct fstab* fstab = fs_mgr_read_fstab_default();
 
-  property_get("ro.hardware", propbuf, "");
-  snprintf(fstab_name, sizeof(fstab_name), "/fstab.%s", propbuf);
-  fstab = fs_mgr_read_fstab(fstab_name);
   if (fstab != NULL) {
     return fstab;
   }
 
-  fstab = fs_mgr_read_fstab("/fstab.device");
+  fstab = fs_mgr_read_fstab_with_dt("/fstab.device");
   return fstab;
 }
 
