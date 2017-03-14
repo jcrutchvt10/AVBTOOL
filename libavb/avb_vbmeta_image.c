@@ -27,6 +27,7 @@
 #include "avb_rsa.h"
 #include "avb_sha.h"
 #include "avb_util.h"
+#include "avb_version.h"
 
 AvbVBMetaVerifyResult avb_vbmeta_image_verify(
     const uint8_t* data,
@@ -67,11 +68,19 @@ AvbVBMetaVerifyResult avb_vbmeta_image_verify(
   avb_vbmeta_image_header_to_host_byte_order((const AvbVBMetaImageHeader*)data,
                                              &h);
 
-  /* Ensure we don't attempt to access any fields if the major version
-   * is not supported.
+  /* Ensure we don't attempt to access any fields if we do not meet
+   * the specified minimum version of libavb.
    */
-  if (h.header_version_major > AVB_MAJOR_VERSION) {
-    avb_error("No support for given major version.\n");
+  if ((h.required_libavb_version_major != AVB_VERSION_MAJOR) ||
+      (h.required_libavb_version_minor > AVB_VERSION_MINOR)) {
+    avb_error("Mismatch between image version and libavb version.\n");
+    ret = AVB_VBMETA_VERIFY_RESULT_UNSUPPORTED_VERSION;
+    goto out;
+  }
+
+  /* Ensure |release_string| ends with a NUL byte. */
+  if (h.release_string[AVB_RELEASE_STRING_SIZE - 1] != '\0') {
+    avb_error("Release string does not end with a NUL byte.\n");
     goto out;
   }
 
@@ -233,8 +242,10 @@ void avb_vbmeta_image_header_to_host_byte_order(const AvbVBMetaImageHeader* src,
                                                 AvbVBMetaImageHeader* dest) {
   avb_memcpy(dest, src, sizeof(AvbVBMetaImageHeader));
 
-  dest->header_version_major = avb_be32toh(dest->header_version_major);
-  dest->header_version_minor = avb_be32toh(dest->header_version_minor);
+  dest->required_libavb_version_major =
+      avb_be32toh(dest->required_libavb_version_major);
+  dest->required_libavb_version_minor =
+      avb_be32toh(dest->required_libavb_version_minor);
 
   dest->authentication_data_block_size =
       avb_be64toh(dest->authentication_data_block_size);
@@ -275,6 +286,9 @@ const char* avb_vbmeta_verify_result_to_string(AvbVBMetaVerifyResult result) {
       break;
     case AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER:
       ret = "INVALID_VBMETA_HEADER";
+      break;
+    case AVB_VBMETA_VERIFY_RESULT_UNSUPPORTED_VERSION:
+      ret = "UNSUPPORTED_VERSION";
       break;
     case AVB_VBMETA_VERIFY_RESULT_HASH_MISMATCH:
       ret = "HASH_MISMATCH";

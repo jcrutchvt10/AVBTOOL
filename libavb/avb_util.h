@@ -78,15 +78,23 @@ extern "C" {
  *
  * These have no effect unless AVB_ENABLE_DEBUG is defined.
  */
-#define avb_debug(message)                                       \
-  do {                                                           \
-    avb_print(__FILE__ ":" AVB_TO_STRING(__LINE__) ": DEBUG: "); \
-    avb_print(message);                                          \
+#define avb_debug(message)              \
+  do {                                  \
+    avb_printv(avb_basename(__FILE__),  \
+               ":",                     \
+               AVB_TO_STRING(__LINE__), \
+               ": DEBUG: ",             \
+               message,                 \
+               NULL);                   \
   } while (0)
-#define avb_debugv(message, ...)                                 \
-  do {                                                           \
-    avb_print(__FILE__ ":" AVB_TO_STRING(__LINE__) ": DEBUG: "); \
-    avb_printv(message, ##__VA_ARGS__);                          \
+#define avb_debugv(message, ...)        \
+  do {                                  \
+    avb_printv(avb_basename(__FILE__),  \
+               ":",                     \
+               AVB_TO_STRING(__LINE__), \
+               ": DEBUG: ",             \
+               message,                 \
+               ##__VA_ARGS__);          \
   } while (0)
 #else
 #define avb_debug(message)
@@ -96,30 +104,46 @@ extern "C" {
 /* Prints out a message. This is typically used if a runtime-error
  * occurs.
  */
-#define avb_error(message)                                       \
-  do {                                                           \
-    avb_print(__FILE__ ":" AVB_TO_STRING(__LINE__) ": ERROR: "); \
-    avb_print(message);                                          \
+#define avb_error(message)              \
+  do {                                  \
+    avb_printv(avb_basename(__FILE__),  \
+               ":",                     \
+               AVB_TO_STRING(__LINE__), \
+               ": ERROR: ",             \
+               message,                 \
+               NULL);                   \
   } while (0)
-#define avb_errorv(message, ...)                                 \
-  do {                                                           \
-    avb_print(__FILE__ ":" AVB_TO_STRING(__LINE__) ": ERROR: "); \
-    avb_printv(message, ##__VA_ARGS__);                          \
+#define avb_errorv(message, ...)        \
+  do {                                  \
+    avb_printv(avb_basename(__FILE__),  \
+               ":",                     \
+               AVB_TO_STRING(__LINE__), \
+               ": ERROR: ",             \
+               message,                 \
+               ##__VA_ARGS__);          \
   } while (0)
 
 /* Prints out a message and calls avb_abort().
  */
-#define avb_fatal(message)                                       \
-  do {                                                           \
-    avb_print(__FILE__ ":" AVB_TO_STRING(__LINE__) ": FATAL: "); \
-    avb_print(message);                                          \
-    avb_abort();                                                 \
+#define avb_fatal(message)              \
+  do {                                  \
+    avb_printv(avb_basename(__FILE__),  \
+               ":",                     \
+               AVB_TO_STRING(__LINE__), \
+               ": FATAL: ",             \
+               message,                 \
+               NULL);                   \
+    avb_abort();                        \
   } while (0)
-#define avb_fatalv(message, ...)                                 \
-  do {                                                           \
-    avb_print(__FILE__ ":" AVB_TO_STRING(__LINE__) ": FATAL: "); \
-    avb_printv(message, ##__VA_ARGS__);                          \
-    avb_abort();                                                 \
+#define avb_fatalv(message, ...)        \
+  do {                                  \
+    avb_printv(avb_basename(__FILE__),  \
+               ":",                     \
+               AVB_TO_STRING(__LINE__), \
+               ": FATAL: ",             \
+               message,                 \
+               ##__VA_ARGS__);          \
+    avb_abort();                        \
   } while (0)
 
 /* Converts a 32-bit unsigned integer from big-endian to host byte order. */
@@ -239,6 +263,12 @@ char* avb_replace(const char* str,
 
 /* Calculates the CRC-32 for data in |buf| of size |buf_size|. */
 uint32_t avb_crc32(const uint8_t* buf, size_t buf_size);
+
+/* Returns the basename of |str|. This is defined as the last path
+ * component, assuming the normal POSIX separator '/'. If there are no
+ * separators, returns |str|.
+ */
+const char* avb_basename(const char* str);
 
 #ifdef __cplusplus
 }

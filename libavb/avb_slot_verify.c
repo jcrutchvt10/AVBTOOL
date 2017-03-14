@@ -30,6 +30,7 @@
 #include "avb_sha.h"
 #include "avb_util.h"
 #include "avb_vbmeta_image.h"
+#include "avb_version.h"
 
 /* Maximum allow length (in bytes) of a partition name, including
  * ab_suffix.
@@ -54,6 +55,7 @@ static inline bool result_should_continue(AvbSlotVerifyResult result) {
     case AVB_SLOT_VERIFY_RESULT_ERROR_OOM:
     case AVB_SLOT_VERIFY_RESULT_ERROR_IO:
     case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
       return false;
 
     case AVB_SLOT_VERIFY_RESULT_OK:
@@ -235,14 +237,20 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
   const AvbDescriptor** descriptors = NULL;
   size_t num_descriptors;
   size_t n;
-  int is_main_vbmeta;
+  bool is_main_vbmeta;
+  bool is_vbmeta_partition;
   AvbVBMetaData* vbmeta_image_data = NULL;
 
   ret = AVB_SLOT_VERIFY_RESULT_OK;
 
   avb_assert(slot_data != NULL);
 
-  is_main_vbmeta = (avb_strcmp(partition_name, "vbmeta") == 0);
+  /* Since we allow top-level vbmeta in 'boot', use
+   * rollback_index_location to determine whether we're the main
+   * vbmeta struct.
+   */
+  is_main_vbmeta = (rollback_index_location == 0);
+  is_vbmeta_partition = (avb_strcmp(partition_name, "vbmeta") == 0);
 
   if (!avb_validate_utf8((const uint8_t*)partition_name, partition_name_len)) {
     avb_error("Partition name is not valid UTF-8.\n");
@@ -271,7 +279,7 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
    * struct is in the beginning. Otherwise we have to locate it via a
    * footer.
    */
-  if (is_main_vbmeta) {
+  if (is_vbmeta_partition) {
     vbmeta_offset = 0;
     vbmeta_size = VBMETA_MAX_SIZE;
   } else {
@@ -330,9 +338,32 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
     goto out;
   } else if (io_ret != AVB_IO_RESULT_OK) {
-    avb_errorv(full_partition_name, ": Error loading vbmeta data.\n", NULL);
-    ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
-    goto out;
+    /* If we're looking for 'vbmeta' but there is no such partition,
+     * go try to get it from the boot partition instead.
+     */
+    if (is_main_vbmeta && io_ret == AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION &&
+        is_vbmeta_partition) {
+      avb_debugv(full_partition_name,
+                 ": No such partition. Trying 'boot' instead.\n",
+                 NULL);
+      ret = load_and_verify_vbmeta(ops,
+                                   requested_partitions,
+                                   ab_suffix,
+                                   allow_verification_error,
+                                   0 /* toplevel_vbmeta_flags */,
+                                   0 /* rollback_index_location */,
+                                   "boot",
+                                   avb_strlen("boot"),
+                                   NULL /* expected_public_key */,
+                                   0 /* expected_public_key_length */,
+                                   slot_data,
+                                   out_algorithm_type);
+      goto out;
+    } else {
+      avb_errorv(full_partition_name, ": Error loading vbmeta data.\n", NULL);
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+      goto out;
+    }
   }
   avb_assert(vbmeta_num_read <= vbmeta_size);
 
@@ -365,6 +396,14 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
       avb_errorv(full_partition_name,
                  ": Error verifying vbmeta image: invalid vbmeta header\n",
+                 NULL);
+      goto out;
+
+    case AVB_VBMETA_VERIFY_RESULT_UNSUPPORTED_VERSION:
+      /* No way to continue this case. */
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION;
+      avb_errorv(full_partition_name,
+                 ": Error verifying vbmeta image: unsupported AVB version\n",
                  NULL);
       goto out;
   }
@@ -551,6 +590,15 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
           goto out;
         }
 
+        if (chain_desc.rollback_index_location == 0) {
+          avb_errorv(full_partition_name,
+                     ": Chain partition has invalid "
+                     "rollback_index_location field.\n",
+                     NULL);
+          ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
+          goto out;
+        }
+
         chain_partition_name = ((const uint8_t*)descriptors[n]) +
                                sizeof(AvbChainPartitionDescriptor);
         chain_public_key = chain_partition_name + chain_desc.partition_name_len;
@@ -697,7 +745,8 @@ out:
  */
 static char* sub_cmdline(AvbOps* ops,
                          const char* cmdline,
-                         const char* ab_suffix) {
+                         const char* ab_suffix,
+                         bool using_boot_for_vbmeta) {
   const char* part_name_str[NUM_GUIDS] = {"system", "boot", "vbmeta"};
   const char* replace_str[NUM_GUIDS] = {"$(ANDROID_SYSTEM_PARTUUID)",
                                         "$(ANDROID_BOOT_PARTUUID)",
@@ -705,11 +754,17 @@ static char* sub_cmdline(AvbOps* ops,
   char* ret = NULL;
   AvbIOResult io_ret;
 
+  /* Special-case for when the top-level vbmeta struct is in the boot
+   * partition.
+   */
+  if (using_boot_for_vbmeta) {
+    part_name_str[2] = "boot";
+  }
+
   /* Replace unique partition GUIDs */
   for (size_t n = 0; n < NUM_GUIDS; n++) {
     char part_name[PART_NAME_MAX_SIZE];
     char guid_buf[37];
-    char* new_ret;
 
     if (!avb_str_concat(part_name,
                         sizeof part_name,
@@ -731,14 +786,15 @@ static char* sub_cmdline(AvbOps* ops,
     }
 
     if (ret == NULL) {
-      new_ret = avb_replace(cmdline, replace_str[n], guid_buf);
+      ret = avb_replace(cmdline, replace_str[n], guid_buf);
     } else {
-      new_ret = avb_replace(ret, replace_str[n], guid_buf);
+      char* new_ret = avb_replace(ret, replace_str[n], guid_buf);
+      avb_free(ret);
+      ret = new_ret;
     }
-    if (new_ret == NULL) {
+    if (ret == NULL) {
       goto fail;
     }
-    ret = new_ret;
   }
 
   return ret;
@@ -872,6 +928,7 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
   AvbSlotVerifyData* slot_data = NULL;
   AvbAlgorithmType algorithm_type = AVB_ALGORITHM_TYPE_NONE;
   AvbIOResult io_ret;
+  bool using_boot_for_vbmeta = false;
 
   if (out_data != NULL) {
     *out_data = NULL;
@@ -899,7 +956,7 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                requested_partitions,
                                ab_suffix,
                                allow_verification_error,
-                               0, /* toplevel_vbmeta_flags */
+                               0 /* toplevel_vbmeta_flags */,
                                0 /* rollback_index_location */,
                                "vbmeta",
                                avb_strlen("vbmeta"),
@@ -909,6 +966,12 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                &algorithm_type);
   if (!allow_verification_error && ret != AVB_SLOT_VERIFY_RESULT_OK) {
     goto fail;
+  }
+
+  if (avb_strcmp(slot_data->vbmeta_images[0].partition_name, "vbmeta") != 0) {
+    avb_assert(avb_strcmp(slot_data->vbmeta_images[0].partition_name, "boot") ==
+               0);
+    using_boot_for_vbmeta = true;
   }
 
   /* If things check out, mangle the kernel command-line as needed. */
@@ -928,18 +991,20 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       goto fail;
     }
 
-    /* Add androidboot.vbmeta.version option. */
+    /* Add androidboot.vbmeta.avb_version option. */
     if (!cmdline_append_version(slot_data,
-                                "androidboot.vbmeta.version",
-                                AVB_MAJOR_VERSION,
-                                AVB_MINOR_VERSION)) {
+                                "androidboot.vbmeta.avb_version",
+                                AVB_VERSION_MAJOR,
+                                AVB_VERSION_MINOR)) {
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
       goto fail;
     }
 
     /* Substitute $(ANDROID_SYSTEM_PARTUUID) and friends. */
     if (slot_data->cmdline != NULL) {
-      char* new_cmdline = sub_cmdline(ops, slot_data->cmdline, ab_suffix);
+      char* new_cmdline;
+      new_cmdline = sub_cmdline(
+          ops, slot_data->cmdline, ab_suffix, using_boot_for_vbmeta);
       if (new_cmdline == NULL) {
         ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
         goto fail;
@@ -1106,6 +1171,9 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result) {
       break;
     case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
       ret = "ERROR_INVALID_METADATA";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
+      ret = "ERROR_UNSUPPORTED_VERSION";
       break;
       /* Do not add a 'default:' case here because of -Wswitch. */
   }

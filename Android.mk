@@ -35,12 +35,14 @@ avb_common_cflags := \
     -Wno-psabi \
     -Wno-unused-parameter \
     -ffunction-sections \
-    -fstack-protector-strong
+    -fstack-protector-strong \
+    -g
 avb_common_cppflags := \
     -Wnon-virtual-dtor \
     -fno-strict-aliasing
 avb_common_ldflags := \
-    -Wl,--gc-sections
+    -Wl,--gc-sections \
+    -rdynamic
 
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES := avbtool
@@ -74,7 +76,8 @@ LOCAL_SRC_FILES := \
     libavb/avb_slot_verify.c \
     libavb/avb_sysdeps_posix.c \
     libavb/avb_util.c \
-    libavb/avb_vbmeta_image.c
+    libavb/avb_vbmeta_image.c \
+    libavb/avb_version.c
 include $(BUILD_STATIC_LIBRARY)
 
 # Build libavb for the host (for unit tests).
@@ -101,7 +104,8 @@ LOCAL_SRC_FILES := \
     libavb/avb_sha512.c \
     libavb/avb_slot_verify.c \
     libavb/avb_util.c \
-    libavb/avb_vbmeta_image.c
+    libavb/avb_vbmeta_image.c \
+    libavb/avb_version.c
 include $(BUILD_HOST_STATIC_LIBRARY)
 
 # Build libavb_ab for the host (for unit tests).
@@ -155,7 +159,6 @@ LOCAL_CPPFLAGS := $(avb_common_cppflags)
 LOCAL_LDFLAGS := $(avb_common_ldflags)
 LOCAL_STATIC_LIBRARIES := \
     libavb_host \
-    libavb_host_sysdeps \
     libavb_ab_host \
     libavb_atx_host \
     libgmock_host \
@@ -171,7 +174,8 @@ LOCAL_SRC_FILES := \
     test/avb_util_unittest.cc \
     test/avb_vbmeta_image_unittest.cc \
     test/avbtool_unittest.cc \
-    test/fake_avb_ops.cc
+    test/fake_avb_ops.cc \
+    test/avb_sysdeps_posix_testing.cc
 LOCAL_LDLIBS_linux := -lrt
 include $(BUILD_HOST_NATIVE_TEST)
 

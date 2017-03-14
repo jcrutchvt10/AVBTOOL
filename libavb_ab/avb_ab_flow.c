@@ -248,7 +248,8 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
           break;
 
         case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
-          /* Even with |allow_verification_error| this is game over. */
+        case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
+          /* Even with |allow_verification_error| these mean game over. */
           set_slot_unbootable = true;
           break;
 
