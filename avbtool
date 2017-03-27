@@ -1907,7 +1907,7 @@ class Avb(object):
       c += ' 2'  # number of optional args
       c += ' restart_on_corruption'
       c += ' ignore_zero_blocks'
-    c += '" root=0xfd00'
+    c += '" root=/dev/dm-0'
 
     # Now that we have the command-line, generate the descriptor.
     desc = AvbKernelCmdlineDescriptor()
