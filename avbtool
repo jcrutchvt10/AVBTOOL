@@ -28,14 +28,13 @@ import argparse
 import binascii
 import bisect
 import hashlib
+import math
 import os
 import struct
 import subprocess
 import sys
 import tempfile
 import time
-
-import Crypto.PublicKey.RSA
 
 # Keep in sync with libavb/avb_version.h.
 AVB_VERSION_MAJOR = 1
@@ -215,22 +214,6 @@ def round_to_pow2(number):
   return 2**((number - 1).bit_length())
 
 
-def write_long(output, num_bits, value):
-  """Writes a long to an output stream using a given amount of bits.
-
-  This number is written big-endian, e.g. with the most significant
-  bit first.
-
-  Arguments:
-    output: The object to write the output to.
-    num_bits: The number of bits to write, e.g. 2048.
-    value: The value to write.
-  """
-  for bit_pos in range(num_bits, 0, -8):
-    octet = (value >> (bit_pos - 8)) & 0xff
-    output.write(struct.pack('!B', octet))
-
-
 def encode_long(num_bits, value):
   """Encodes a long to a bytearray() using a given amount of bits.
 
@@ -314,55 +297,88 @@ def parse_number(string):
   return int(string, 0)
 
 
-def write_rsa_key(output, key):
-  """Writes a public RSA key in |AvbRSAPublicKeyHeader| format.
+class RSAPublicKey(object):
+  """Data structure used for a RSA public key.
 
-  This writes the |AvbRSAPublicKeyHeader| as well as the two large
-  numbers (|key_num_bits| bits long) following it.
-
-  Arguments:
-    output: The object to write the output to.
-    key: A Crypto.PublicKey.RSA object.
+  Attributes:
+    exponent: The key exponent.
+    modulus: The key modulus.
+    num_bits: The key size.
   """
-  # key.e is exponent
-  # key.n is modulus
-  key_num_bits = key.size() + 1
-  # Calculate n0inv = -1/n[0] (mod 2^32)
-  b = 2L**32
-  n0inv = b - modinv(key.n, b)
-  # Calculate rr = r^2 (mod N), where r = 2^(# of key bits)
-  r = 2L**key.n.bit_length()
-  rrmodn = r * r % key.n
-  output.write(struct.pack('!II', key_num_bits, n0inv))
-  write_long(output, key_num_bits, key.n)
-  write_long(output, key_num_bits, rrmodn)
+
+  MODULUS_PREFIX = 'modulus='
+
+  def __init__(self, key_path):
+    """Loads and parses an RSA key from either a private or public key file.
+
+    Arguments:
+      key_path: The path to a key file.
+    """
+    # We used to have something as simple as this:
+    #
+    #  key = Crypto.PublicKey.RSA.importKey(open(key_path).read())
+    #  self.exponent = key.e
+    #  self.modulus = key.n
+    #  self.num_bits = key.size() + 1
+    #
+    # but unfortunately PyCrypto is not available in the builder. So
+    # instead just parse openssl(1) output to get this
+    # information. It's ugly but...
+    args = ['openssl', 'rsa', '-in', key_path, '-modulus', '-noout']
+    p = subprocess.Popen(args,
+                         stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
+    (pout, perr) = p.communicate()
+    if p.wait() != 0:
+      # Could be just a public key is passed, try that.
+      args.append('-pubin')
+      p = subprocess.Popen(args,
+                           stdin=subprocess.PIPE,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+      (pout, perr) = p.communicate()
+      if p.wait() != 0:
+        raise AvbError('Error getting public key: {}'.format(perr))
+
+    if not pout.lower().startswith(self.MODULUS_PREFIX):
+      raise AvbError('Unexpected modulus output')
+
+    modulus_hexstr = pout[len(self.MODULUS_PREFIX):]
+
+    # The exponent is assumed to always be 65537 and the number of
+    # bits can be derived from the modulus by rounding up to the
+    # nearest power of 2.
+    self.modulus = int(modulus_hexstr, 16)
+    self.num_bits = round_to_pow2(int(math.ceil(math.log(self.modulus, 2))))
+    self.exponent = 65537
 
 
-def encode_rsa_key(key):
+def encode_rsa_key(key_path):
   """Encodes a public RSA key in |AvbRSAPublicKeyHeader| format.
 
   This creates a |AvbRSAPublicKeyHeader| as well as the two large
   numbers (|key_num_bits| bits long) following it.
 
   Arguments:
-    key: A Crypto.PublicKey.RSA object.
+    key_path: The path to a key file.
 
   Returns:
     A bytearray() with the |AvbRSAPublicKeyHeader|.
   """
+  key = RSAPublicKey(key_path)
+  if key.exponent != 65537:
+    raise AvbError('Only RSA keys with exponent 65537 are supported.')
   ret = bytearray()
-  # key.e is exponent
-  # key.n is modulus
-  key_num_bits = key.size() + 1
   # Calculate n0inv = -1/n[0] (mod 2^32)
   b = 2L**32
-  n0inv = b - modinv(key.n, b)
+  n0inv = b - modinv(key.modulus, b)
   # Calculate rr = r^2 (mod N), where r = 2^(# of key bits)
-  r = 2L**key.n.bit_length()
-  rrmodn = r * r % key.n
-  ret.extend(struct.pack('!II', key_num_bits, n0inv))
-  ret.extend(encode_long(key_num_bits, key.n))
-  ret.extend(encode_long(key_num_bits, rrmodn))
+  r = 2L**key.modulus.bit_length()
+  rrmodn = r * r % key.modulus
+  ret.extend(struct.pack('!II', key.num_bits, n0inv))
+  ret.extend(encode_long(key.num_bits, key.modulus))
+  ret.extend(encode_long(key.num_bits, rrmodn))
   return ret
 
 
@@ -2102,8 +2118,7 @@ class Avb(object):
       if not key_path:
         raise AvbError('Key is required for algorithm {}'.format(
             algorithm_name))
-      key = Crypto.PublicKey.RSA.importKey(open(key_path).read())
-      encoded_key = encode_rsa_key(key)
+      encoded_key = encode_rsa_key(key_path)
       if len(encoded_key) != alg.public_key_num_bytes:
         raise AvbError('Key is wrong size for algorithm {}'.format(
             algorithm_name))
@@ -2191,8 +2206,7 @@ class Avb(object):
       key_path: The path to a RSA private key file.
       output: The file to write to.
     """
-    key = Crypto.PublicKey.RSA.importKey(open(key_path).read())
-    write_rsa_key(output, key)
+    output.write(encode_rsa_key(key_path))
 
   def append_vbmeta_image(self, image_filename, vbmeta_image_filename,
                           partition_size):
@@ -2643,7 +2657,7 @@ class Avb(object):
       image.truncate(original_image_size)
       raise
 
-  def make_atx_certificate(self, output, authority_key_path, subject_key,
+  def make_atx_certificate(self, output, authority_key_path, subject_key_path,
                            subject_key_version, subject,
                            is_intermediate_authority, signing_helper):
     """Implements the 'make_atx_certificate' command.
@@ -2659,7 +2673,7 @@ class Avb(object):
                           If None, then a certificate will be created without a
                           signature. The signature can be created out-of-band
                           and appended.
-      subject_key: A PEM or DER subject public key.
+      subject_key_path: Path to a PEM or DER subject public key.
       subject_key_version: A 64-bit version value. If this is None, the number
                            of seconds since the epoch is used.
       subject: A subject identifier. For Product Signing Key certificates this
@@ -2670,8 +2684,7 @@ class Avb(object):
     """
     signed_data = bytearray()
     signed_data.extend(struct.pack('<I', 1))  # Format Version
-    signed_data.extend(
-        encode_rsa_key(Crypto.PublicKey.RSA.importKey(subject_key)))
+    signed_data.extend(encode_rsa_key(subject_key_path))
     hasher = hashlib.sha256()
     hasher.update(subject)
     signed_data.extend(hasher.digest())
@@ -2699,7 +2712,7 @@ class Avb(object):
     output.write(signed_data)
     output.write(signature)
 
-  def make_atx_permanent_attributes(self, output, root_authority_key,
+  def make_atx_permanent_attributes(self, output, root_authority_key_path,
                                     product_id):
     """Implements the 'make_atx_permanent_attributes' command.
 
@@ -2709,7 +2722,8 @@ class Avb(object):
 
     Arguments:
       output: Attributes will be written to this file on success.
-      root_authority_key: A PEM or DER public key for the root authority.
+      root_authority_key_path: Path to a PEM or DER public key for
+        the root authority.
       product_id: A 16-byte Product ID.
 
     Raises:
@@ -2719,7 +2733,7 @@ class Avb(object):
     if len(product_id) != EXPECTED_PRODUCT_ID_SIZE:
       raise AvbError('Invalid Product ID length.')
     output.write(struct.pack('<I', 1))  # Format Version
-    write_rsa_key(output, Crypto.PublicKey.RSA.importKey(root_authority_key))
+    output.write(encode_rsa_key(root_authority_key_path))
     output.write(product_id)
 
   def make_atx_metadata(self, output, intermediate_key_certificate,
@@ -3314,7 +3328,7 @@ class AvbTool(object):
   def make_atx_certificate(self, args):
     """Implements the 'make_atx_certificate' sub-command."""
     self.avb.make_atx_certificate(args.output, args.authority_key,
-                                  args.subject_key.read(),
+                                  args.subject_key.name,
                                   args.subject_key_version,
                                   args.subject.read(),
                                   args.subject_is_intermediate_authority,
@@ -3323,7 +3337,7 @@ class AvbTool(object):
   def make_atx_permanent_attributes(self, args):
     """Implements the 'make_atx_permanent_attributes' sub-command."""
     self.avb.make_atx_permanent_attributes(args.output,
-                                           args.root_authority_key.read(),
+                                           args.root_authority_key.name,
                                            args.product_id.read())
 
   def make_atx_metadata(self, args):
