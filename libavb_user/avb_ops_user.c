@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2017 The Android Open Source Project
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -22,6 +22,8 @@
  * SOFTWARE.
  */
 
+#include "avb_ops_user.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/fs.h>
@@ -35,7 +37,7 @@
 #include <cutils/properties.h>
 #include <fs_mgr.h>
 
-#include "avb_ops_device.h"
+#include <libavb_ab/libavb_ab.h>
 
 /* Open the appropriate fstab file and fallback to /fstab.device if
  * that's what's being used.
@@ -47,7 +49,7 @@ static struct fstab* open_fstab(void) {
     return fstab;
   }
 
-  fstab = fs_mgr_read_fstab_with_dt("/fstab.device");
+  fstab = fs_mgr_read_fstab("/fstab.device");
   return fstab;
 }
 
@@ -120,9 +122,19 @@ static AvbIOResult read_from_partition(AvbOps* ops,
 
   fd = open_partition(partition, O_RDONLY);
   if (fd == -1) {
-    avb_errorv("Error opening \"", partition, "\" partition.\n", NULL);
-    ret = AVB_IO_RESULT_ERROR_IO;
+    ret = AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
     goto out;
+  }
+
+  if (offset < 0) {
+    uint64_t partition_size;
+    if (ioctl(fd, BLKGETSIZE64, &partition_size) != 0) {
+      avb_errorv(
+          "Error getting size of \"", partition, "\" partition.\n", NULL);
+      ret = AVB_IO_RESULT_ERROR_IO;
+      goto out;
+    }
+    offset = partition_size - (-offset);
   }
 
   where = lseek(fd, offset, SEEK_SET);
@@ -209,35 +221,33 @@ out:
   return ret;
 }
 
-AvbABOps* avb_ops_device_new(void) {
-  AvbABOps* ab_ops;
+AvbOps* avb_ops_user_new(void) {
+  AvbOps* ops;
 
-  ab_ops = calloc(1, sizeof(AvbABOps));
-  if (ab_ops == NULL) {
-    avb_error("Error allocating memory for AvbABOps.\n");
-    goto out;
-  }
-
-  ab_ops->ops = calloc(1, sizeof(AvbOps));
-  if (ab_ops->ops == NULL) {
+  ops = calloc(1, sizeof(AvbOps));
+  if (ops == NULL) {
     avb_error("Error allocating memory for AvbOps.\n");
-    free(ab_ops);
     goto out;
   }
 
-  /* We only need these operations since that's all what is being used
-   * by the A/B routines.
-   */
-  ab_ops->ops->read_from_partition = read_from_partition;
-  ab_ops->ops->write_to_partition = write_to_partition;
-  ab_ops->read_ab_metadata = avb_ab_data_read;
-  ab_ops->write_ab_metadata = avb_ab_data_write;
+  ops->ab_ops = calloc(1, sizeof(AvbABOps));
+  if (ops->ab_ops == NULL) {
+    avb_error("Error allocating memory for AvbABOps.\n");
+    free(ops);
+    goto out;
+  }
+  ops->ab_ops->ops = ops;
+
+  ops->read_from_partition = read_from_partition;
+  ops->write_to_partition = write_to_partition;
+  ops->ab_ops->read_ab_metadata = avb_ab_data_read;
+  ops->ab_ops->write_ab_metadata = avb_ab_data_write;
 
 out:
-  return ab_ops;
+  return ops;
 }
 
-void avb_ops_device_free(AvbABOps* ab_ops) {
-  free(ab_ops->ops);
-  free(ab_ops);
+void avb_ops_user_free(AvbOps* ops) {
+  free(ops->ab_ops);
+  free(ops);
 }
