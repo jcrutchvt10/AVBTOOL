@@ -92,6 +92,9 @@ validation operation (see `avb_validate_vbmeta_public_key()` in
     + An A/B implementation for use in boot loaders.
 * `libavb_atx/`
     + An Android Things Extension for validating public key metadata.
+* `libavb_user/`
+    + Contains an AvbOps implementation suitable for use in userspace
+      on the device (used in boot_control.avb and avbctl).
 * `boot_control/`
     + An implemementation of the Android boot_control HAL for use with
       boot loaders using `libavb_ab`.
@@ -105,6 +108,9 @@ validation operation (see `avb_validate_vbmeta_public_key()` in
 * `test/`
     + Unit tests for `abvtool`, `libavb`, `libavb_ab`, and
       `libavb_atx`.
+* `tools/avbctl/`
+    + Contains the source-code for a tool that can be used to control
+      AVB at runtime.
 * `examples/uefi/`
     + Contains the source-code for a UEFI-based boot-loader utilizing
       `libavb/` and `libavb_ab/`.

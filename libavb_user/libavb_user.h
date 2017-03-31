@@ -22,19 +22,18 @@
  * SOFTWARE.
  */
 
-#ifndef AVB_OPS_DEVICE_H_
-#define AVB_OPS_DEVICE_H_
+#ifndef LIBAVB_USER_H_
+#define LIBAVB_USER_H_
 
 #include <libavb_ab/libavb_ab.h>
 
-/* Allocates an AvbOps instance suitable for use on the
- * device. Returns NULL on OOM.
- *
- * Free with avb_ops_device_free().
+/* The AVB_INSIDE_LIBAVB_USER_H preprocessor symbol is used to enforce
+ * library users to include only this file. All public interfaces, and
+ * only public interfaces, must be included here.
  */
-AvbABOps* avb_ops_device_new(void);
 
-/* Frees an AvbOps instance previously allocated with avb_ops_device_new(). */
-void avb_ops_device_free(AvbABOps* ab_ops);
+#define AVB_INSIDE_LIBAVB_USER_H
+#include "avb_ops_user.h"
+#undef AVB_INSIDE_LIBAVB_USER_H
 
-#endif /* AVB_OPS_DEVICE_H_ */
+#endif /* LIBAVB_USER_H_ */
