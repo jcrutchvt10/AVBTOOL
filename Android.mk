@@ -80,6 +80,32 @@ LOCAL_SRC_FILES := \
     libavb/avb_version.c
 include $(BUILD_STATIC_LIBRARY)
 
+# Build avbctl for the target.
+include $(CLEAR_VARS)
+LOCAL_MODULE := avbctl
+LOCAL_MODULE_CLASS := EXECUTABLES
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
+LOCAL_CPP_EXTENSION := .cc
+LOCAL_CLANG := true
+LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_COMPILATION -DAVB_ENABLE_DEBUG
+LOCAL_CPPFLAGS := $(avb_common_cppflags)
+LOCAL_LDFLAGS := $(avb_common_ldflags)
+LOCAL_STATIC_LIBRARIES := \
+    libavb \
+    libfs_mgr
+LOCAL_SHARED_LIBRARIES := \
+    libbase \
+    libhidlbase \
+    libhidltransport \
+    libhwbinder \
+    libutils \
+    android.hardware.boot@1.0
+LOCAL_SRC_FILES := \
+    libavb_ab/avb_ab_flow.c \
+    libavb_user/avb_ops_user.c \
+    tools/avbctl/avbctl.cc
+include $(BUILD_EXECUTABLE)
+
 # Build libavb for the host (for unit tests).
 include $(CLEAR_VARS)
 LOCAL_MODULE := libavb_host
@@ -196,10 +222,9 @@ LOCAL_MODULE := bootctrl.avb
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_REQUIRED_MODULES := libavb
 LOCAL_SRC_FILES := \
-    boot_control/boot_control_avb.c \
-    boot_control/avb_ops_device.c \
     libavb_ab/avb_ab_flow.c \
-    libavb/avb_sysdeps_posix.c
+    libavb_user/avb_ops_user.c \
+    boot_control/boot_control_avb.c
 LOCAL_CLANG := true
 LOCAL_CFLAGS := $(avb_common_cflags) -DAVB_COMPILATION
 LOCAL_LDFLAGS := $(avb_common_ldflags)
