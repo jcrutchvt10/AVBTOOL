@@ -385,12 +385,14 @@ def lookup_algorithm_by_type(alg_type):
   raise AvbError('Unknown algorithm type {}'.format(alg_type))
 
 
-def raw_sign(signing_helper, algorithm_name, key_path, raw_data_to_sign):
+def raw_sign(signing_helper, algorithm_name, signature_num_bytes, key_path,
+             raw_data_to_sign):
   """Computes a raw RSA signature using |signing_helper| or openssl.
 
   Arguments:
     signing_helper: Program which signs a hash and returns the signature.
     algorithm_name: The algorithm name as per the ALGORITHMS dict.
+    signature_num_bytes: Number of bytes used to store the signature.
     key_path: Path to the private key file. Must be PEM format.
     raw_data_to_sign: Data to sign (bytearray or str expected).
 
@@ -417,7 +419,10 @@ def raw_sign(signing_helper, algorithm_name, key_path, raw_data_to_sign):
   retcode = p.wait()
   if retcode != 0:
     raise AvbError('Error signing: {}'.format(perr))
-  return bytearray(pout)
+  signature = bytearray(pout)
+  if len(signature) != signature_num_bytes:
+    raise AvbError('Error signing: Invalid length of signature')
+  return signature
 
 
 class ImageChunk(object):
@@ -2166,7 +2171,8 @@ class Avb(object):
 
       # Calculate the signature.
       padding_and_hash = str(bytearray(alg.padding)) + binary_hash
-      binary_signature.extend(raw_sign(signing_helper, algorithm_name, key_path,
+      binary_signature.extend(raw_sign(signing_helper, algorithm_name,
+                                       alg.signature_num_bytes, key_path,
                                        padding_and_hash))
 
     # Generate Authentication data block.
@@ -2682,12 +2688,14 @@ class Avb(object):
     if authority_key_path:
       padding_and_hash = bytearray()
       algorithm_name = 'SHA512_RSA4096'
+      alg = ALGORITHMS[algorithm_name]
       hasher = hashlib.sha512()
-      padding_and_hash.extend(ALGORITHMS[algorithm_name].padding)
+      padding_and_hash.extend(alg.padding)
       hasher.update(signed_data)
       padding_and_hash.extend(hasher.digest())
       signature.extend(raw_sign(signing_helper, algorithm_name,
-                                authority_key_path, padding_and_hash))
+                                alg.signature_num_bytes, authority_key_path,
+                                padding_and_hash))
     output.write(signed_data)
     output.write(signature)
 
