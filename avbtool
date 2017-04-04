@@ -69,19 +69,22 @@ class Algorithm(object):
 
   Attributes:
     algorithm_type: Integer code corresponding to |AvbAlgorithmType|.
+    hash_name: Empty or a name from |hashlib.algorithms|.
     hash_num_bytes: Number of bytes used to store the hash.
     signature_num_bytes: Number of bytes used to store the signature.
     public_key_num_bytes: Number of bytes used to store the public key.
     padding: Padding used for signature, if any.
   """
 
-  def __init__(self, algorithm_type, hash_num_bytes, signature_num_bytes,
-               public_key_num_bytes, padding):
+  def __init__(self, algorithm_type, hash_name, hash_num_bytes,
+               signature_num_bytes, public_key_num_bytes, padding):
     self.algorithm_type = algorithm_type
+    self.hash_name = hash_name
     self.hash_num_bytes = hash_num_bytes
     self.signature_num_bytes = signature_num_bytes
     self.public_key_num_bytes = public_key_num_bytes
     self.padding = padding
+
 
 # This must be kept in sync with the avb_crypto.h file.
 #
@@ -90,12 +93,14 @@ class Algorithm(object):
 ALGORITHMS = {
     'NONE': Algorithm(
         algorithm_type=0,        # AVB_ALGORITHM_TYPE_NONE
+        hash_name='',
         hash_num_bytes=0,
         signature_num_bytes=0,
         public_key_num_bytes=0,
         padding=[]),
     'SHA256_RSA2048': Algorithm(
         algorithm_type=1,        # AVB_ALGORITHM_TYPE_SHA256_RSA2048
+        hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=256,
         public_key_num_bytes=8 + 2*2048/8,
@@ -109,6 +114,7 @@ ALGORITHMS = {
             ]),
     'SHA256_RSA4096': Algorithm(
         algorithm_type=2,        # AVB_ALGORITHM_TYPE_SHA256_RSA4096
+        hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=512,
         public_key_num_bytes=8 + 2*4096/8,
@@ -122,6 +128,7 @@ ALGORITHMS = {
             ]),
     'SHA256_RSA8192': Algorithm(
         algorithm_type=3,        # AVB_ALGORITHM_TYPE_SHA256_RSA8192
+        hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=1024,
         public_key_num_bytes=8 + 2*8192/8,
@@ -135,6 +142,7 @@ ALGORITHMS = {
             ]),
     'SHA512_RSA2048': Algorithm(
         algorithm_type=4,        # AVB_ALGORITHM_TYPE_SHA512_RSA2048
+        hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=256,
         public_key_num_bytes=8 + 2*2048/8,
@@ -148,6 +156,7 @@ ALGORITHMS = {
             ]),
     'SHA512_RSA4096': Algorithm(
         algorithm_type=5,        # AVB_ALGORITHM_TYPE_SHA512_RSA4096
+        hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=512,
         public_key_num_bytes=8 + 2*4096/8,
@@ -161,6 +170,7 @@ ALGORITHMS = {
             ]),
     'SHA512_RSA8192': Algorithm(
         algorithm_type=6,        # AVB_ALGORITHM_TYPE_SHA512_RSA8192
+        hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=1024,
         public_key_num_bytes=8 + 2*8192/8,
@@ -220,6 +230,8 @@ def encode_long(num_bits, value):
   This number is written big-endian, e.g. with the most significant
   bit first.
 
+  This is the reverse of decode_long().
+
   Arguments:
     num_bits: The number of bits to write, e.g. 2048.
     value: The value to write.
@@ -231,6 +243,27 @@ def encode_long(num_bits, value):
   for bit_pos in range(num_bits, 0, -8):
     octet = (value >> (bit_pos - 8)) & 0xff
     ret.extend(struct.pack('!B', octet))
+  return ret
+
+
+def decode_long(blob):
+  """Decodes a long from a bytearray() using a given amount of bits.
+
+  This number is expected to be in big-endian, e.g. with the most
+  significant bit first.
+
+  This is the reverse of encode_long().
+
+  Arguments:
+    value: A bytearray() with the encoded long.
+
+  Returns:
+    The decoded value.
+  """
+  ret = 0
+  for b in bytearray(blob):
+    ret *= 256
+    ret += b
   return ret
 
 
@@ -439,6 +472,70 @@ def raw_sign(signing_helper, algorithm_name, signature_num_bytes, key_path,
   if len(signature) != signature_num_bytes:
     raise AvbError('Error signing: Invalid length of signature')
   return signature
+
+
+def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
+  """Checks that the signature in a vbmeta blob was made by
+     the embedded public key.
+
+  Arguments:
+    vbmeta_header: A AvbVBMetaHeader.
+    vbmeta_blob: The whole vbmeta blob, including the header.
+
+  Returns:
+    True if the signature is valid and corresponds to the embedded
+    public key. Also returns True if the vbmeta blob is not signed.
+  """
+  (_, alg) = lookup_algorithm_by_type(vbmeta_header.algorithm_type)
+  if alg.hash_name == '':
+    return True
+  header_blob = vbmeta_blob[0:256]
+  auth_offset = 256
+  aux_offset = auth_offset + vbmeta_header.authentication_data_block_size
+  aux_size = vbmeta_header.auxiliary_data_block_size
+  aux_blob = vbmeta_blob[aux_offset:aux_offset + aux_size]
+  pubkey_offset = aux_offset + vbmeta_header.public_key_offset
+  pubkey_size = vbmeta_header.public_key_size
+  pubkey_blob = vbmeta_blob[pubkey_offset:pubkey_offset + pubkey_size]
+
+  digest_offset = auth_offset + vbmeta_header.hash_offset
+  digest_size = vbmeta_header.hash_size
+  digest_blob = vbmeta_blob[digest_offset:digest_offset + digest_size]
+
+  sig_offset = auth_offset + vbmeta_header.signature_offset
+  sig_size = vbmeta_header.signature_size
+  sig_blob = vbmeta_blob[sig_offset:sig_offset + sig_size]
+
+  # Now that we've got the stored digest, public key, and signature
+  # all we need to do is to verify. This is the exactly the same
+  # steps as performed in the avb_vbmeta_image_verify() function in
+  # libavb/avb_vbmeta_image.c.
+
+  ha = hashlib.new(alg.hash_name)
+  ha.update(header_blob)
+  ha.update(aux_blob)
+  computed_digest = ha.digest()
+
+  if computed_digest != digest_blob:
+    return False
+
+  padding_and_digest = bytearray(alg.padding)
+  padding_and_digest.extend(computed_digest)
+
+  (num_bits,) = struct.unpack('!I', pubkey_blob[0:4])
+  modulus_blob = pubkey_blob[8:8 + num_bits/8]
+  modulus = decode_long(modulus_blob)
+  exponent = 65537
+
+  # For now, just use Crypto.PublicKey.RSA to verify the signature. This
+  # is OK since 'avbtool verify_image' is not expected to run on the
+  # Android builders (see bug #36809096).
+  import Crypto.PublicKey.RSA
+  key = Crypto.PublicKey.RSA.construct((modulus, long(exponent)))
+  if not key.verify(decode_long(padding_and_digest),
+                    (decode_long(sig_blob), None)):
+    return False
+  return True
 
 
 class ImageChunk(object):
@@ -1801,6 +1898,25 @@ class Avb(object):
     if num_printed == 0:
       o.write('    (none)\n')
 
+  def verify_image(self, image_filename):
+    """Implements the 'verify_image' command.
+
+    Arguments:
+      image_filename: Image file to get information from (file object).
+    """
+
+    image = ImageHandler(image_filename)
+    (footer, header, descriptors, image_size) = self._parse_image(image)
+    offset = 0
+    if footer:
+      offset = footer.vbmeta_offset
+    size = (header.SIZE + header.authentication_data_block_size +
+            header.auxiliary_data_block_size)
+    image.seek(offset)
+    vbmeta_blob = image.read(size)
+    if not verify_vbmeta_signature(header, vbmeta_blob):
+      raise AvbError('Signature check failed.')
+
   def _parse_image(self, image):
     """Gets information about an image.
 
@@ -2174,12 +2290,7 @@ class Avb(object):
     binary_hash = bytearray()
     binary_signature = bytearray()
     if algorithm_name != 'NONE':
-      if algorithm_name[0:6] == 'SHA256':
-        ha = hashlib.sha256()
-      elif algorithm_name[0:6] == 'SHA512':
-        ha = hashlib.sha512()
-      else:
-        raise AvbError('Unsupported algorithm {}.'.format(algorithm_name))
+      ha = hashlib.new(alg.hash_name)
       ha.update(header_data_blob)
       ha.update(aux_data_blob)
       binary_hash.extend(ha.digest())
@@ -3157,6 +3268,15 @@ class AvbTool(object):
                             default=sys.stdout)
     sub_parser.set_defaults(func=self.info_image)
 
+    sub_parser = subparsers.add_parser(
+        'verify_image',
+        help='Verify an image.')
+    sub_parser.add_argument('--image',
+                            help='Image to verify',
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.set_defaults(func=self.verify_image)
+
     sub_parser = subparsers.add_parser('set_ab_metadata',
                                        help='Set A/B metadata.')
     sub_parser.add_argument('--misc_image',
@@ -3324,6 +3444,10 @@ class AvbTool(object):
   def info_image(self, args):
     """Implements the 'info_image' sub-command."""
     self.avb.info_image(args.image.name, args.output)
+
+  def verify_image(self, args):
+    """Implements the 'verify_image' sub-command."""
+    self.avb.verify_image(args.image.name)
 
   def make_atx_certificate(self, args):
     """Implements the 'make_atx_certificate' sub-command."""
