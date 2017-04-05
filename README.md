@@ -274,6 +274,11 @@ Here's an example invocation:
 
     /path/to/my_signing_program SHA256_RSA2048 /path/to/publickey.pem
 
+The `verify_image` command verifies that the signature on the vbmeta
+struct is valid and that it was made with the embedded public
+key. This can be used to check that a custom signing helper works as
+intended.
+
 The `append_vbmeta_image` command can be used to append an entire
 vbmeta blob to the end of another image. This is useful for cases when
 not using any vbmeta partitions, for example:
