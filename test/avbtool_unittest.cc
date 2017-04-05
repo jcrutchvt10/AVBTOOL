@@ -1486,6 +1486,51 @@ TEST_F(AvbToolTest, SigningHelperReturnError) {
       vbmeta_path.value().c_str());
 }
 
+TEST_F(AvbToolTest, VerifyImageNoSignature) {
+  GenerateVBMetaImage("vbmeta.img",
+                      "",  // NONE
+                      0,
+                      base::FilePath());
+
+  EXPECT_COMMAND(0,
+                 "./avbtool verify_image "
+                 "--image %s ",
+                 vbmeta_image_path_.value().c_str());
+}
+
+TEST_F(AvbToolTest, VerifyImageValidSignature) {
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"));
+
+  EXPECT_COMMAND(0,
+                 "./avbtool verify_image "
+                 "--image %s ",
+                 vbmeta_image_path_.value().c_str());
+}
+
+TEST_F(AvbToolTest, VerifyImageBrokenSignature) {
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta.bin");
+  base::FilePath signing_helper_test_path =
+      testdir_.Append("signing_helper_test");
+
+  // Intentionally make the signer generate a wrong signature.
+  EXPECT_COMMAND(
+      0,
+      "SIGNING_HELPER_GENERATE_WRONG_SIGNATURE=1 ./avbtool make_vbmeta_image "
+      "--output %s "
+      "--algorithm SHA256_RSA2048 --key test/data/testkey_rsa2048.pem "
+      "--signing_helper test/avbtool_signing_helper_test.py "
+      "--internal_release_string \"\"",
+      vbmeta_path.value().c_str());
+
+  EXPECT_COMMAND(1,
+                 "./avbtool verify_image "
+                 "--image %s ",
+                 vbmeta_path.value().c_str());
+}
+
 TEST_F(AvbToolTest, MakeAtxPikCertificate) {
   base::FilePath subject_path = testdir_.Append("tmp_subject");
   ASSERT_TRUE(base::WriteFile(subject_path, "fake PIK subject", 16));
