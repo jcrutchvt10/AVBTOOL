@@ -31,8 +31,29 @@
 extern "C" {
 #endif
 
-/* Allocates an AvbOps instance suitable for use in userspace on the
- * device. Returns NULL on OOM.
+/* Allocates an AvbOps instance suitable for use in Android userspace
+ * on the device. Returns NULL on OOM.
+ *
+ * The returned AvbOps has the following characteristics:
+ *
+ * - The read_from_partition() and write_to_partition() operations are
+ *   implemented, however for these operations to work the fstab file
+ *   on the device must have a /misc entry using a by-name device file
+ *   scheme and the containing by-name/ subdirectory must have files
+ *   for other partitions.
+ *
+ * - The remaining operations are implemented and never fails and
+ *   return the following values:
+ *   - validate_vbmeta_public_key(): always returns |true|.
+ *   - read_rollback_index(): returns 0 for any roolback index.
+ *   - write_rollback_index(): no-op.
+ *   - read_is_device_unlocked(): always returns |true|.
+ *   - get_unique_guid_for_partition(): always returns the empty string.
+ *
+ * - The |ab_ops| member will point to a valid AvbABOps instance
+ *   implemented via libavb_ab/. This should only be used if the AVB
+ *   A/B stack is used on the device. This is what is used in
+ *   bootctrl.avb boot control implementation.
  *
  * Free with avb_ops_user_free().
  */
