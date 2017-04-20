@@ -103,7 +103,10 @@ typedef struct {
  * avb_slot_verify_data_free() function is called.
  *
  * The |ab_suffix| field is the copy of the of |ab_suffix| field
- * passed to avb_slot_verify(). It is the A/B suffix of the slot.
+ * passed to avb_slot_verify(). It is the A/B suffix of the slot. This
+ * value includes the leading underscore - typical values are "" (if
+ * no slots are in use), "_a" (for the first slot), and "_b" (for the
+ * second slot).
  *
  * The VBMeta images that were checked are available in the
  * |vbmeta_images| field. The field |num_vbmeta_images| contains the
@@ -158,8 +161,9 @@ typedef struct {
  *   necessarily the same version number of the on-disk metadata for
  *   the slot that was verified.
  *
- * Note that androidboot.slot_suffix is not set in |cmdline| - you
- * will have to pass this command-line option yourself.
+ * Note that neither androidboot.slot_suffix nor androidboot.slot are
+ * set in the |cmdline| field in |AvbSlotVerifyData| - you will have
+ * to pass these yourself.
  *
  * This struct may grow in the future without it being considered an
  * ABI break.
@@ -181,7 +185,9 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
  * and load the contents of the partitions whose name is in the
  * NULL-terminated string array |requested_partitions| (each partition
  * must use hash verification). If not using A/B, pass an empty string
- * (e.g. "", not NULL) for |ab_suffix|.
+ * (e.g. "", not NULL) for |ab_suffix|. This parameter must include
+ * the leading underscore, for example "_a" should be used to refer to
+ * the first slot.
  *
  * Typically the |requested_partitions| array only contains a single
  * item for the boot partition, 'boot'.
