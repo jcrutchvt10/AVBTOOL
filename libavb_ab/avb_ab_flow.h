@@ -189,9 +189,9 @@ const char* avb_ab_flow_result_to_string(AvbABFlowResult result);
  * AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX for the slot in
  * question.
  *
- * Note that androidboot.slot_suffix is not set in the |cmdline| field
- * in |AvbSlotVerifyData| - you will have to pass this command-line
- * option yourself.
+ * Note that neither androidboot.slot_suffix nor androidboot.slot are
+ * set in the |cmdline| field in |AvbSlotVerifyData| - you will have
+ * to pass these yourself.
  *
  * If a slot was selected and it verified then AVB_AB_FLOW_RESULT_OK
  * is returned.
