@@ -243,6 +243,13 @@ hashtree is also appended to the image.
         [--signing_helper /path/to/external/signer]                                \
         [--append_to_release_string STR]
 
+The size of an image with integrity footers can be changed using the
+`resize_image` command:
+
+    $ avbtool resize_image                                                         \
+        --image IMAGE                                                              \
+        --partition_size SIZE
+
 The integrity footer on an image can be removed from an image. The
 hashtree can optionally be kept in place.
 

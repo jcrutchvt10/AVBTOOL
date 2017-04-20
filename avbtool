@@ -1814,6 +1814,56 @@ class Avb(object):
     # And cut...
     image.truncate(new_image_size)
 
+  def resize_image(self, image_filename, partition_size):
+    """Implements the 'resize_image' command.
+
+    Arguments:
+      image_filename: File with footer to resize.
+      partition_size: The new size of the image.
+
+    Raises:
+      AvbError: If there's no footer in the image.
+    """
+
+    image = ImageHandler(image_filename)
+
+    if partition_size % image.block_size != 0:
+      raise AvbError('Partition size of {} is not a multiple of the image '
+                     'block size {}.'.format(partition_size,
+                                             image.block_size))
+
+    (footer, vbmeta_header, descriptors, _) = self._parse_image(image)
+
+    if not footer:
+      raise AvbError('Given image does not have a footer.')
+
+    # The vbmeta blob is always at the end of the data so resizing an
+    # image amounts to just moving the footer around.
+
+    vbmeta_end_offset = footer.vbmeta_offset + footer.vbmeta_size
+    if vbmeta_end_offset % image.block_size != 0:
+      vbmeta_end_offset += image.block_size - (vbmeta_end_offset % image.block_size)
+
+    if partition_size < vbmeta_end_offset + 1*image.block_size:
+        raise AvbError('Requested size of {} is too small for an image '
+                       'of size {}.'
+                       .format(partition_size,
+                               vbmeta_end_offset + 1*image.block_size))
+
+    # Cut at the end of the vbmeta blob and insert a DONT_CARE chunk
+    # with enough bytes such that the final Footer block is at the end
+    # of partition_size.
+    image.truncate(vbmeta_end_offset)
+    image.append_dont_care(partition_size - vbmeta_end_offset -
+                           1*image.block_size)
+
+    # Just reuse the same footer - only difference is that we're
+    # writing it in a different place.
+    footer_blob = footer.encode()
+    footer_blob_with_padding = ('\0'*(image.block_size - AvbFooter.SIZE) +
+                                footer_blob)
+    image.append_raw(footer_blob_with_padding)
+
   def set_ab_metadata(self, misc_image, slot_data):
     """Implements the 'set_ab_metadata' command.
 
@@ -3255,6 +3305,17 @@ class AvbTool(object):
                             action='store_true')
     sub_parser.set_defaults(func=self.erase_footer)
 
+    sub_parser = subparsers.add_parser('resize_image',
+                                       help='Resize image with a footer.')
+    sub_parser.add_argument('--image',
+                            help='Image with a footer',
+                            type=argparse.FileType('rwb+'),
+                            required=True)
+    sub_parser.add_argument('--partition_size',
+                            help='New partition size',
+                            type=parse_number)
+    sub_parser.set_defaults(func=self.resize_image)
+
     sub_parser = subparsers.add_parser(
         'info_image',
         help='Show information about vbmeta or footer.')
@@ -3436,6 +3497,10 @@ class AvbTool(object):
   def erase_footer(self, args):
     """Implements the 'erase_footer' sub-command."""
     self.avb.erase_footer(args.image.name, args.keep_hashtree)
+
+  def resize_image(self, args):
+    """Implements the 'resize_image' sub-command."""
+    self.avb.resize_image(args.image.name, args.partition_size)
 
   def set_ab_metadata(self, args):
     """Implements the 'set_ab_metadata' sub-command."""
