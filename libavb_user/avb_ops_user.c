@@ -221,6 +221,51 @@ out:
   return ret;
 }
 
+static AvbIOResult validate_vbmeta_public_key(
+    AvbOps* ops,
+    const uint8_t* public_key_data,
+    size_t public_key_length,
+    const uint8_t* public_key_metadata,
+    size_t public_key_metadata_length,
+    bool* out_is_trusted) {
+  if (out_is_trusted != NULL) {
+    *out_is_trusted = true;
+  }
+  return AVB_IO_RESULT_OK;
+}
+
+static AvbIOResult read_rollback_index(AvbOps* ops,
+                                       size_t rollback_index_location,
+                                       uint64_t* out_rollback_index) {
+  if (out_rollback_index != NULL) {
+    *out_rollback_index = 0;
+  }
+  return AVB_IO_RESULT_OK;
+}
+
+static AvbIOResult write_rollback_index(AvbOps* ops,
+                                        size_t rollback_index_location,
+                                        uint64_t rollback_index) {
+  return AVB_IO_RESULT_OK;
+}
+
+static AvbIOResult read_is_device_unlocked(AvbOps* ops, bool* out_is_unlocked) {
+  if (out_is_unlocked != NULL) {
+    *out_is_unlocked = true;
+  }
+  return AVB_IO_RESULT_OK;
+}
+
+static AvbIOResult get_unique_guid_for_partition(AvbOps* ops,
+                                                 const char* partition,
+                                                 char* guid_buf,
+                                                 size_t guid_buf_size) {
+  if (guid_buf != NULL && guid_buf_size > 0) {
+    guid_buf[0] = '\0';
+  }
+  return AVB_IO_RESULT_OK;
+}
+
 AvbOps* avb_ops_user_new(void) {
   AvbOps* ops;
 
@@ -240,6 +285,11 @@ AvbOps* avb_ops_user_new(void) {
 
   ops->read_from_partition = read_from_partition;
   ops->write_to_partition = write_to_partition;
+  ops->validate_vbmeta_public_key = validate_vbmeta_public_key;
+  ops->read_rollback_index = read_rollback_index;
+  ops->write_rollback_index = write_rollback_index;
+  ops->read_is_device_unlocked = read_is_device_unlocked;
+  ops->get_unique_guid_for_partition = get_unique_guid_for_partition;
   ops->ab_ops->read_ab_metadata = avb_ab_data_read;
   ops->ab_ops->write_ab_metadata = avb_ab_data_write;
 
