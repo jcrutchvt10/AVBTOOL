@@ -342,9 +342,41 @@ static bool collect_descriptors(const AvbDescriptor* descriptor,
   return true;  // Keep iterating.
 }
 
+static std::string AddHashFooterGetExpectedVBMetaInfo(
+    const bool sparse_image, const uint64_t partition_size) {
+  return base::StringPrintf(
+      "Footer version:           1.0\n"
+      "Image size:               %" PRIu64
+      " bytes\n"
+      "Original image size:      1052672 bytes\n"
+      "VBMeta offset:            1052672\n"
+      "VBMeta size:              1280 bytes\n"
+      "--\n"
+      "Minimum libavb version:   1.0%s\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          704 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           0\n"
+      "Flags:                    0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Hash descriptor:\n"
+      "      Image Size:            1052672 bytes\n"
+      "      Hash Algorithm:        sha256\n"
+      "      Partition Name:        foobar\n"
+      "      Salt:                  d00df00d\n"
+      "      Digest:                "
+      "9a58cc996d405e08a1e00f96dbfe9104fedf41cb83b1f"
+      "5e4ed357fbcf58d88d9\n",
+      partition_size,
+      sparse_image ? " (Sparse)" : "");
+}
+
 void AvbToolTest::AddHashFooterTest(bool sparse_image) {
   const size_t rootfs_size = 1028 * 1024;
   const size_t partition_size = 1536 * 1024;
+  const size_t resized_partition_size = 1280 * 1024;
 
   // Generate a 1028 KiB file with known content. Some content have
   // been arranged to ensure FILL_DATA segments in the sparse file.
@@ -393,30 +425,7 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
                    (int)partition_size,
                    ext_vbmeta_path.value().c_str());
 
-    ASSERT_EQ(base::StringPrintf("Footer version:           1.0\n"
-                                 "Image size:               1572864 bytes\n"
-                                 "Original image size:      1052672 bytes\n"
-                                 "VBMeta offset:            1052672\n"
-                                 "VBMeta size:              1280 bytes\n"
-                                 "--\n"
-                                 "Minimum libavb version:   1.0%s\n"
-                                 "Header Block:             256 bytes\n"
-                                 "Authentication Block:     320 bytes\n"
-                                 "Auxiliary Block:          704 bytes\n"
-                                 "Algorithm:                SHA256_RSA2048\n"
-                                 "Rollback Index:           0\n"
-                                 "Flags:                    0\n"
-                                 "Release String:           ''\n"
-                                 "Descriptors:\n"
-                                 "    Hash descriptor:\n"
-                                 "      Image Size:            1052672 bytes\n"
-                                 "      Hash Algorithm:        sha256\n"
-                                 "      Partition Name:        foobar\n"
-                                 "      Salt:                  d00df00d\n"
-                                 "      Digest:                "
-                                 "9a58cc996d405e08a1e00f96dbfe9104fedf41cb83b1f"
-                                 "5e4ed357fbcf58d88d9\n",
-                                 sparse_image ? " (Sparse)" : ""),
+    ASSERT_EQ(AddHashFooterGetExpectedVBMetaInfo(sparse_image, partition_size),
               InfoImage(rootfs_path));
 
     ASSERT_EQ(
@@ -439,6 +448,25 @@ void AvbToolTest::AddHashFooterTest(bool sparse_image) {
         "5e4ed357fbcf58d88d9\n",
         InfoImage(ext_vbmeta_path));
   }
+
+  // Resize the image and check that the only thing that has changed
+  // is where the footer is. First check that resizing to a smaller
+  // size than the original rootfs fails. Then resize to something
+  // larger than the original rootfs but smaller than the current
+  // partition size.
+  EXPECT_COMMAND(1,
+                 "./avbtool resize_image --image %s "
+                 "--partition_size %d",
+                 rootfs_path.value().c_str(),
+                 (int)(rootfs_size - 16 * 1024));
+  EXPECT_COMMAND(0,
+                 "./avbtool resize_image --image %s "
+                 "--partition_size %d",
+                 rootfs_path.value().c_str(),
+                 (int)resized_partition_size);
+  ASSERT_EQ(
+      AddHashFooterGetExpectedVBMetaInfo(sparse_image, resized_partition_size),
+      InfoImage(rootfs_path));
 
   if (sparse_image) {
     EXPECT_COMMAND(0,
