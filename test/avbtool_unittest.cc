@@ -1419,6 +1419,32 @@ TEST_F(AvbToolTest, ChainedPartition) {
                         d.public_key_len));
 }
 
+TEST_F(AvbToolTest, ChainedPartitionNoLocationCollision) {
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta_cp.bin");
+
+  base::FilePath pk_path = testdir_.Append("testkey_rsa2048.avbpubkey");
+
+  EXPECT_COMMAND(
+      0,
+      "./avbtool extract_public_key --key test/data/testkey_rsa2048.pem"
+      " --output %s",
+      pk_path.value().c_str());
+
+  // Check that avbtool bails if the same Rollback Index Location is
+  // used for multiple chained partitions.
+  EXPECT_COMMAND(
+      1,
+      "./avbtool make_vbmeta_image "
+      "--output %s "
+      "--chain_partition system:1:%s "
+      "--chain_partition other:1:%s "
+      "--algorithm SHA256_RSA2048 --key test/data/testkey_rsa2048.pem "
+      "--internal_release_string \"\"",
+      vbmeta_path.value().c_str(),
+      pk_path.value().c_str(),
+      pk_path.value().c_str());
+}
+
 TEST_F(AvbToolTest, AppendVBMetaImage) {
   size_t boot_size = 5 * 1024 * 1024;
   size_t boot_partition_size = 32 * 1024 * 1024;

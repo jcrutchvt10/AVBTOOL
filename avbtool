@@ -2209,16 +2209,25 @@ class Avb(object):
 
     # Insert chained partition descriptors, if any
     if chain_partitions:
+      used_locations = {}
       for cp in chain_partitions:
         cp_tokens = cp.split(':')
         if len(cp_tokens) != 3:
           raise AvbError('Malformed chained partition "{}".'.format(cp))
+        partition_name = cp_tokens[0]
+        rollback_index_location = int(cp_tokens[1])
+        file_path = cp_tokens[2]
+        # Check that the same rollback location isn't being used by
+        # multiple chained partitions.
+        if used_locations.get(rollback_index_location):
+          raise AvbError('Rollback Index Location {} is already in use.'.format(
+              rollback_index_location))
+        used_locations[rollback_index_location] = True
         desc = AvbChainPartitionDescriptor()
-        desc.partition_name = cp_tokens[0]
-        desc.rollback_index_location = int(cp_tokens[1])
+        desc.partition_name = partition_name
+        desc.rollback_index_location = rollback_index_location
         if desc.rollback_index_location < 1:
           raise AvbError('Rollback index location must be 1 or larger.')
-        file_path = cp_tokens[2]
         desc.public_key = open(file_path, 'rb').read()
         descriptors.append(desc)
 
