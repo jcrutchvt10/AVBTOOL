@@ -306,7 +306,10 @@ Android Verified Boot is enabled by the `BOARD_AVB_ENABLE` variable
 This will make the build system create `vbmeta.img` which will contain
 a hash descriptor for `boot.img`, a hashtree descriptor for
 `system.img`, a kernel-cmdline descriptor for setting up `dm-verity`
-for `system.img` and append a hash-tree to `system.img`.
+for `system.img` and append a hash-tree to `system.img`. If the build
+system is set up such that `vendor.img` is being built, a hash-tree
+will also be appended to this image and its hash-tree descriptor will
+be included in `vbmeta.img`.
 
 By default, the algorithm `SHA256_RSA4096` is used with a test key
 from the `external/avb/test/data` directory. This can be overriden by
@@ -335,19 +338,23 @@ If this is not set, the rollback index defaults to 0.
 
 The variable `BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS` can be used to specify
 additional options passed to `avbtool make_vbmeta_image`. Typical
-options to be used here include `--prop`, `--prop_from_file`, and
-`--chain_partition`.
+options to be used here include `--prop`, `--prop_from_file`,
+`--chain_partition`, `--public_key_metadata`, and `--signing_helper`.
 
-The variable `BOARD_AVBTOOL_BOOT_ADD_HASH_FOOTER_ARGS` can be used to
+The variable `BOARD_AVB_BOOT_ADD_HASH_FOOTER_ARGS` can be used to
 specify additional options passed to `avbtool add_hash_footer` for
 `boot.img`. Typical options to be used here include `--hash_algorithm`
 and `--salt`.
 
-The variable `BOARD_AVBTOOL_SYSTEM_ADD_HASHTREE_FOOTER_ARGS` can be
-used to specify additional options passed to `avbtool
-add_hashtree_footer` for `system.img`. Typical options to be used here
-include `--hash_algorithm`, `--salt`, `--block_size`, and
-`--generate_fec`.
+The variable `BOARD_AVB_SYSTEM_ADD_HASHTREE_FOOTER_ARGS` can be used
+to specify additional options passed to `avbtool add_hashtree_footer`
+for `system.img`. Typical options to be used here include
+`--hash_algorithm`, `--salt`, `--block_size`, and `--generate_fec`.
+
+The variable `BOARD_AVB_VENDOR_ADD_HASHTREE_FOOTER_ARGS` can be used
+to specify additional options passed to `avbtool add_hashtree_footer`
+for `vendor.img`. Typical options to be used here include
+`--hash_algorithm`, `--salt`, `--block_size`, and `--generate_fec`.
 
 Build system variables (such as `PRODUCT_SUPPORTS_VERITY_FEC`) used
 for previous version of Verified Boot in Android are not used in AVB
