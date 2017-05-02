@@ -256,6 +256,39 @@ static AvbIOResult read_is_device_unlocked(AvbOps* ops, bool* out_is_unlocked) {
   return AVB_IO_RESULT_OK;
 }
 
+static AvbIOResult get_size_of_partition(AvbOps* ops,
+                                         const char* partition,
+                                         uint64_t* out_size_in_bytes) {
+  int fd;
+  AvbIOResult ret;
+
+  fd = open_partition(partition, O_WRONLY);
+  if (fd == -1) {
+    avb_errorv("Error opening \"", partition, "\" partition.\n", NULL);
+    ret = AVB_IO_RESULT_ERROR_IO;
+    goto out;
+  }
+
+  if (out_size_in_bytes != NULL) {
+    if (ioctl(fd, BLKGETSIZE64, out_size_in_bytes) != 0) {
+      avb_errorv(
+          "Error getting size of \"", partition, "\" partition.\n", NULL);
+      ret = AVB_IO_RESULT_ERROR_IO;
+      goto out;
+    }
+  }
+
+  ret = AVB_IO_RESULT_OK;
+
+out:
+  if (fd != -1) {
+    if (close(fd) != 0) {
+      avb_error("Error closing file descriptor.\n");
+    }
+  }
+  return ret;
+}
+
 static AvbIOResult get_unique_guid_for_partition(AvbOps* ops,
                                                  const char* partition,
                                                  char* guid_buf,
@@ -290,6 +323,7 @@ AvbOps* avb_ops_user_new(void) {
   ops->write_rollback_index = write_rollback_index;
   ops->read_is_device_unlocked = read_is_device_unlocked;
   ops->get_unique_guid_for_partition = get_unique_guid_for_partition;
+  ops->get_size_of_partition = get_size_of_partition;
   ops->ab_ops->read_ab_metadata = avb_ab_data_read;
   ops->ab_ops->write_ab_metadata = avb_ab_data_write;
 

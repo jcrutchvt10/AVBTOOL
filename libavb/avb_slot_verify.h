@@ -218,6 +218,11 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
  * returned if, and only if, there are no errors. This mode is needed
  * to boot valid but unverified slots when the device is unlocked.
  *
+ * Also, if |allow_verification_error| is true then the contents
+ * loaded from |requested_partition| will be the contents of the
+ * entire partition instead of just the size specified in the hash
+ * descriptor.
+ *
  * Also note that |out_data| is never set if
  * AVB_SLOT_VERIFY_RESULT_ERROR_OOM, AVB_SLOT_VERIFY_RESULT_ERROR_IO,
  * or AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA is returned.

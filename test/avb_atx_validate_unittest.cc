@@ -156,6 +156,13 @@ class AvbAtxValidateTest : public ::testing::Test, public FakeAvbOpsDelegate {
     return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
   }
 
+  AvbIOResult get_size_of_partition(AvbOps* ops,
+                                    const char* partition,
+                                    uint64_t* out_size) override {
+    // Expect method not used.
+    return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
+  }
+
   AvbIOResult read_permanent_attributes(
       AvbAtxPermanentAttributes* attributes) override {
     if (fail_read_permanent_attributes_) {
@@ -602,6 +609,12 @@ class AvbAtxSlotVerifyTest : public BaseAvbToolTest, public FakeAvbOpsDelegate {
                                             size_t guid_buf_size) override {
     return ops_.get_unique_guid_for_partition(
         ops, partition, guid_buf, guid_buf_size);
+  }
+
+  AvbIOResult get_size_of_partition(AvbOps* ops,
+                                    const char* partition,
+                                    uint64_t* out_size) override {
+    return ops_.get_size_of_partition(ops, partition, out_size);
   }
 
   AvbIOResult read_permanent_attributes(

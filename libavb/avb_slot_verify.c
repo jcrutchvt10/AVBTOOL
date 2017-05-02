@@ -87,6 +87,7 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
   uint8_t* digest;
   size_t digest_len;
   const char* found;
+  uint64_t image_size;
 
   if (!avb_hash_descriptor_validate_and_byteswap(
           (const AvbHashDescriptor*)descriptor, &hash_desc)) {
@@ -116,18 +117,44 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
     goto out;
   }
 
-  image_buf = avb_malloc(hash_desc.image_size);
+  /* If we're allowing verification errors then hash_desc.image_size
+   * may no longer match what's in the partition... so in this case
+   * just load the entire partition.
+   *
+   * For example, this can happen if a developer does 'fastboot flash
+   * boot /path/to/new/and/bigger/boot.img'. We want this to work
+   * since it's such a common workflow.
+   */
+  image_size = hash_desc.image_size;
+  if (allow_verification_error) {
+    if (ops->get_size_of_partition == NULL) {
+      avb_errorv(part_name,
+                 ": The get_size_of_partition() operation is "
+                 "not implemented so we may not load the entire partition. "
+                 "Please implement.",
+                 NULL);
+    } else {
+      io_ret = ops->get_size_of_partition(ops, part_name, &image_size);
+      if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+        goto out;
+      } else if (io_ret != AVB_IO_RESULT_OK) {
+        avb_errorv(part_name, ": Error determining partition size.\n", NULL);
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+        goto out;
+      }
+      avb_debugv(part_name, ": Loading entire partition.\n", NULL);
+    }
+  }
+
+  image_buf = avb_malloc(image_size);
   if (image_buf == NULL) {
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
     goto out;
   }
 
-  io_ret = ops->read_from_partition(ops,
-                                    part_name,
-                                    0 /* offset */,
-                                    hash_desc.image_size,
-                                    image_buf,
-                                    &part_num_read);
+  io_ret = ops->read_from_partition(
+      ops, part_name, 0 /* offset */, image_size, image_buf, &part_num_read);
   if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
     goto out;
@@ -136,7 +163,7 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
     goto out;
   }
-  if (part_num_read != hash_desc.image_size) {
+  if (part_num_read != image_size) {
     avb_errorv(part_name, ": Read fewer than requested bytes.\n", NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
     goto out;
@@ -196,7 +223,7 @@ out:
       loaded_partition =
           &slot_data->loaded_partitions[slot_data->num_loaded_partitions++];
       loaded_partition->partition_name = avb_strdup(found);
-      loaded_partition->data_size = hash_desc.image_size;
+      loaded_partition->data_size = image_size;
       loaded_partition->data = image_buf;
       image_buf = NULL;
     }
@@ -929,6 +956,18 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
   AvbAlgorithmType algorithm_type = AVB_ALGORITHM_TYPE_NONE;
   AvbIOResult io_ret;
   bool using_boot_for_vbmeta = false;
+
+  /* Fail early if we're missing the AvbOps needed for slot verification.
+   *
+   * For now, handle get_size_of_partition() not being implemented. In
+   * a later release we may change that.
+   */
+  avb_assert(ops->read_is_device_unlocked != NULL);
+  avb_assert(ops->read_from_partition != NULL);
+  avb_assert(ops->validate_vbmeta_public_key != NULL);
+  avb_assert(ops->read_rollback_index != NULL);
+  avb_assert(ops->get_unique_guid_for_partition != NULL);
+  /* avb_assert(ops->get_size_of_partition != NULL); */
 
   if (out_data != NULL) {
     *out_data = NULL;
