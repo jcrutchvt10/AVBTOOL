@@ -295,6 +295,34 @@ static AvbIOResult write_to_partition(AvbOps* ops,
   return AVB_IO_RESULT_OK;
 }
 
+static AvbIOResult get_size_of_partition(AvbOps* ops,
+                                         const char* partition_name,
+                                         uint64_t* out_size) {
+  EFI_STATUS err;
+  GPTEntry* partition_entry;
+  uint64_t partition_size;
+  UEFIAvbOpsData* data = (UEFIAvbOpsData*)ops->user_data;
+
+  avb_assert(partition_name != NULL);
+
+  err = find_partition_entry_by_name(
+      data->block_io, partition_name, &partition_entry);
+  if (EFI_ERROR(err)) {
+    return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
+  }
+
+  partition_size =
+      (partition_entry->last_lba - partition_entry->first_lba + 1) *
+      data->block_io->Media->BlockSize;
+
+  if (out_size != NULL) {
+    *out_size = partition_size;
+  }
+
+  avb_free(partition_entry);
+  return AVB_IO_RESULT_OK;
+}
+
 /* Helper method to get the parent path to the current |walker| path
  * given the initial path, |init|. Resulting path is stored in |next|.
  * Caller is responsible for freeing |next|. Stores allocated bytes
@@ -618,6 +646,7 @@ AvbOps* uefi_avb_ops_new(EFI_HANDLE app_image) {
   data->ops.write_rollback_index = write_rollback_index;
   data->ops.read_is_device_unlocked = read_is_device_unlocked;
   data->ops.get_unique_guid_for_partition = get_unique_guid_for_partition;
+  data->ops.get_size_of_partition = get_size_of_partition;
 
   data->ab_ops.ops = &data->ops;
   data->ab_ops.read_ab_metadata = avb_ab_data_read;

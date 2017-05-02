@@ -341,6 +341,73 @@ TEST_F(AvbSlotVerifyTest, RollbackIndex) {
   avb_slot_verify_data_free(slot_data);
 }
 
+TEST_F(AvbSlotVerifyTest, LoadEntirePartitionIfAllowingVerificationError) {
+  const size_t boot_partition_size = 16 * 1024 * 1024;
+  const size_t boot_image_size = 5 * 1024 * 1024;
+  const size_t new_boot_image_size = 10 * 1024 * 1024;
+  base::FilePath boot_path = GenerateImage("boot_a.img", boot_image_size);
+
+  // If we're allowing verification errors then check that the whole
+  // partition is loaded. This is needed because in this mode for
+  // example the "boot" partition might be flashed with another
+  // boot.img that is larger than what the HashDescriptor in vbmeta
+  // says.
+  EXPECT_COMMAND(
+      0,
+      "./avbtool add_hash_footer"
+      " --image %s"
+      " --rollback_index 0"
+      " --partition_name boot"
+      " --partition_size %zd"
+      " --kernel_cmdline 'cmdline in hash footer $(ANDROID_SYSTEM_PARTUUID)'"
+      " --salt deadbeef"
+      " --internal_release_string \"\"",
+      boot_path.value().c_str(),
+      boot_partition_size);
+
+  GenerateVBMetaImage(
+      "vbmeta_a.img",
+      "SHA256_RSA2048",
+      4,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf(
+          "--include_descriptors_from_image %s"
+          " --kernel_cmdline 'cmdline in vbmeta $(ANDROID_BOOT_PARTUUID)'"
+          " --internal_release_string \"\"",
+          boot_path.value().c_str()));
+
+  // Now replace the boot partition with something bigger and
+  // different. Because FakeOps's get_size_of_partition() operation
+  // just returns the file size it means that this is what is returned
+  // by get_size_of_partition().
+  //
+  // Also make sure this image will return a different digest by using
+  // a non-standard starting byte. This is to force avb_slot_verify()
+  // to return ERROR_VERIFICATION below.
+  GenerateImage("boot_a.img", new_boot_image_size, 1 /* start_byte */);
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            true /* allow_verification_error */,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+
+  // Check that the loaded partition is actually
+  // |new_boot_image_size|.
+  EXPECT_EQ(size_t(1), slot_data->num_loaded_partitions);
+  EXPECT_EQ("boot",
+            std::string(slot_data->loaded_partitions[0].partition_name));
+  EXPECT_EQ(new_boot_image_size, slot_data->loaded_partitions[0].data_size);
+  avb_slot_verify_data_free(slot_data);
+}
+
 TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
   const size_t boot_partition_size = 16 * 1024 * 1024;
   const size_t boot_image_size = 5 * 1024 * 1024;
