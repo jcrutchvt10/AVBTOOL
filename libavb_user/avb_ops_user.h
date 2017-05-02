@@ -36,11 +36,11 @@ extern "C" {
  *
  * The returned AvbOps has the following characteristics:
  *
- * - The read_from_partition() and write_to_partition() operations are
- *   implemented, however for these operations to work the fstab file
- *   on the device must have a /misc entry using a by-name device file
- *   scheme and the containing by-name/ subdirectory must have files
- *   for other partitions.
+ * - The read_from_partition(), write_to_partition(), and
+ *   get_size_of_partition() operations are implemented, however for
+ *   these operations to work the fstab file on the device must have a
+ *   /misc entry using a by-name device file scheme and the containing
+ *   by-name/ subdirectory must have files for other partitions.
  *
  * - The remaining operations are implemented and never fails and
  *   return the following values:

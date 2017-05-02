@@ -74,6 +74,10 @@ class FakeAvbOpsDelegate {
                                                     char* guid_buf,
                                                     size_t guid_buf_size) = 0;
 
+  virtual AvbIOResult get_size_of_partition(AvbOps* ops,
+                                            const char* partition,
+                                            uint64_t* out_size) = 0;
+
   virtual AvbIOResult read_permanent_attributes(
       AvbAtxPermanentAttributes* attributes) = 0;
 
@@ -184,6 +188,10 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
                                             const char* partition,
                                             char* guid_buf,
                                             size_t guid_buf_size) override;
+
+  AvbIOResult get_size_of_partition(AvbOps* ops,
+                                    const char* partition,
+                                    uint64_t* out_size) override;
 
   AvbIOResult read_permanent_attributes(
       AvbAtxPermanentAttributes* attributes) override;
