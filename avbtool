@@ -2081,7 +2081,7 @@ class Avb(object):
     c += ' {}'.format(str(ht.salt).encode('hex'))  # salt
     if ht.fec_num_roots > 0:
       c += ' 10'  # number of optional args
-      c += ' restart_on_corruption'
+      c += ' $(ANDROID_VERITY_MODE)'
       c += ' ignore_zero_blocks'
       c += ' use_fec_from_device PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'
       c += ' fec_roots {}'.format(ht.fec_num_roots)
@@ -2092,7 +2092,7 @@ class Avb(object):
       c += ' fec_start {}'.format(ht.fec_offset/ht.data_block_size)
     else:
       c += ' 2'  # number of optional args
-      c += ' restart_on_corruption'
+      c += ' $(ANDROID_VERITY_MODE)'
       c += ' ignore_zero_blocks'
     c += '" root=/dev/dm-0'
 

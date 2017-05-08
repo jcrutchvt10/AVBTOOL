@@ -50,8 +50,60 @@ typedef enum {
   AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX,
   AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED,
   AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA,
-  AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION
+  AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION,
+  AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT
 } AvbSlotVerifyResult;
+
+/* Various error handling modes for when verification fails using a
+ * hashtree at runtime inside the HLOS.
+ *
+ * AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE means that the OS
+ * will invalidate the current slot and restart.
+ *
+ * AVB_HASHTREE_ERROR_MODE_RESTART means that the OS will restart.
+ *
+ * AVB_HASHTREE_ERROR_MODE_EIO means that an EIO error will be
+ * returned to applications.
+ *
+ * AVB_HASHTREE_ERROR_MODE_LOGGING means that errors will be logged
+ * and corrupt data may be returned to applications. This mode should
+ * be used ONLY for diagnostics and debugging. It cannot be used
+ * unless AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR is also
+ * used.
+ */
+typedef enum {
+  AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+  AVB_HASHTREE_ERROR_MODE_RESTART,
+  AVB_HASHTREE_ERROR_MODE_EIO,
+  AVB_HASHTREE_ERROR_MODE_LOGGING
+} AvbHashtreeErrorMode;
+
+/* Flags that influence how avb_slot_verify() works.
+ *
+ * If AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR is NOT set then
+ * avb_slot_verify() will bail out as soon as an error is encountered
+ * and |out_data| is set only if AVB_SLOT_VERIFY_RESULT_OK is
+ * returned.
+ *
+ * Otherwise if AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR is set
+ * avb_slot_verify() will continue verification efforts and |out_data|
+ * is also set if AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED,
+ * AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION, or
+ * AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX is returned. It is
+ * undefined which error is returned if more than one distinct error
+ * is encountered. It is guaranteed that AVB_SLOT_VERIFY_RESULT_OK is
+ * returned if, and only if, there are no errors. This mode is needed
+ * to boot valid but unverified slots when the device is unlocked.
+ *
+ * Also, if AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR is set the
+ * contents loaded from |requested_partition| will be the contents of
+ * the entire partition instead of just the size specified in the hash
+ * descriptor.
+ */
+typedef enum {
+  AVB_SLOT_VERIFY_FLAGS_NONE = 0,
+  AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR = (1 << 0)
+} AvbSlotVerifyFlags;
 
 /* Get a textual representation of |result|. */
 const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result);
@@ -135,10 +187,24 @@ typedef struct {
  * performing proper substitution of the variables
  * $(ANDROID_SYSTEM_PARTUUID), $(ANDROID_BOOT_PARTUUID), and
  * $(ANDROID_VBMETA_PARTUUID) using the
- * get_unique_guid_for_partition() operation in |AvbOps|.
+ * get_unique_guid_for_partition() operation in |AvbOps|. Additionally
+ * $(ANDROID_VERITY_MODE) will be replaced with the proper dm-verity
+ * option depending on the value of |hashtree_error_mode|.
  *
  * Additionally, the |cmdline| field will have the following kernel
  * command-line options set:
+ *
+ *   androidboot.veritymode: This is set to 'disabled' if the
+ *   AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED flag is set in top-level
+ *   vbmeta struct. Otherwise it is set to 'enforcing' if the
+ *   passed-in hashtree error mode is AVB_HASHTREE_ERROR_MODE_RESTART
+ *   or AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE, 'eio' if it's
+ *   set to AVB_HASHTREE_ERROR_MODE_EIO, and 'logging' if it's set to
+ *   AVB_HASHTREE_ERROR_MODE_LOGGING.
+ *
+ *   androidboot.vbmeta.invalidate_on_error: This is set to 'yes' only
+ *   if hashtree validation isn't disabled and the passed-in hashtree
+ *   error mode is AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE.
  *
  *   androidboot.vbmeta.device_state: set to "locked" or "unlocked"
  *   depending on the result of the result of AvbOps's
@@ -164,6 +230,11 @@ typedef struct {
  * Note that neither androidboot.slot_suffix nor androidboot.slot are
  * set in the |cmdline| field in |AvbSlotVerifyData| - you will have
  * to pass these yourself.
+ *
+ * Also note that androidboot.veritymode is set by libavb and since
+ * AVB only supports 'enforcing' and 'disabled' values, the boot
+ * loader is relieved of managing any state related to dm-verity or
+ * setting this cmdline parameter.
  *
  * This struct may grow in the future without it being considered an
  * ABI break.
@@ -204,24 +275,17 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
  * avb_slot_verify_data_free() when you are done with it. See below
  * for when this is returned.
  *
- * If |allow_verification_error| is false this function will bail out
- * as soon as an error is encountered and |out_data| is set only if
- * AVB_SLOT_VERIFY_RESULT_OK is returned.
+ * The |flags| parameter is used to influence the semantics of
+ * avb_slot_verify() - for example the
+ * AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR flag can be used to
+ * ignore verification errors which is something needed in the
+ * UNLOCKED state. See the AvbSlotVerifyFlags enumeration for details.
  *
- * Otherwise if |allow_verification_error| is true the function will
- * continue verification efforts and |out_data| is also set if
- * AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED,
- * AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION, or
- * AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX is returned. It is
- * undefined which error is returned if more than one distinct error
- * is encountered. It is guaranteed that AVB_SLOT_VERIFY_RESULT_OK is
- * returned if, and only if, there are no errors. This mode is needed
- * to boot valid but unverified slots when the device is unlocked.
- *
- * Also, if |allow_verification_error| is true then the contents
- * loaded from |requested_partition| will be the contents of the
- * entire partition instead of just the size specified in the hash
- * descriptor.
+ * The |hashtree_error_mode| parameter should be set the desired error
+ * handling mode when hashtree validation fails inside the HLOS. This
+ * value isn't used by libavb per se - it is forwarded to the HLOS
+ * through the androidboot.veritymode cmdline parameter. See the
+ * AvbHashtreeErrorMode enumeration for details.
  *
  * Also note that |out_data| is never set if
  * AVB_SLOT_VERIFY_RESULT_ERROR_OOM, AVB_SLOT_VERIFY_RESULT_ERROR_IO,
@@ -254,11 +318,17 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
  * AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION is returned if
  * some of the metadata requires a newer version of libavb than what
  * is in use.
+ *
+ * AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT is returned if the
+ * caller passed invalid parameters, for example trying to use
+ * AVB_HASHTREE_ERROR_MODE_LOGGING without
+ * AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR.
  */
 AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                     const char* const* requested_partitions,
                                     const char* ab_suffix,
-                                    bool allow_verification_error,
+                                    AvbSlotVerifyFlags flags,
+                                    AvbHashtreeErrorMode hashtree_error_mode,
                                     AvbSlotVerifyData** out_data);
 
 #ifdef __cplusplus

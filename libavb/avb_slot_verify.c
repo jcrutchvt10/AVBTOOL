@@ -56,6 +56,7 @@ static inline bool result_should_continue(AvbSlotVerifyResult result) {
     case AVB_SLOT_VERIFY_RESULT_ERROR_IO:
     case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
     case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT:
       return false;
 
     case AVB_SLOT_VERIFY_RESULT_OK:
@@ -949,13 +950,18 @@ static int cmdline_append_hex(AvbSlotVerifyData* slot_data,
 AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                     const char* const* requested_partitions,
                                     const char* ab_suffix,
-                                    bool allow_verification_error,
+                                    AvbSlotVerifyFlags flags,
+                                    AvbHashtreeErrorMode hashtree_error_mode,
                                     AvbSlotVerifyData** out_data) {
   AvbSlotVerifyResult ret;
   AvbSlotVerifyData* slot_data = NULL;
   AvbAlgorithmType algorithm_type = AVB_ALGORITHM_TYPE_NONE;
   AvbIOResult io_ret;
   bool using_boot_for_vbmeta = false;
+  AvbVBMetaImageHeader toplevel_vbmeta;
+  const char* verity_mode;
+  bool allow_verification_error =
+      (flags & AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR);
 
   /* Fail early if we're missing the AvbOps needed for slot verification.
    *
@@ -971,6 +977,16 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
 
   if (out_data != NULL) {
     *out_data = NULL;
+  }
+
+  /* Allowing dm-verity errors defeats the purpose of verified boot so
+   * only allow this if set up to allow verification errors
+   * (e.g. typically only UNLOCKED mode).
+   */
+  if (hashtree_error_mode == AVB_HASHTREE_ERROR_MODE_LOGGING &&
+      !allow_verification_error) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT;
+    goto fail;
   }
 
   slot_data = avb_calloc(sizeof(AvbSlotVerifyData));
@@ -1007,14 +1023,19 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
     goto fail;
   }
 
-  if (avb_strcmp(slot_data->vbmeta_images[0].partition_name, "vbmeta") != 0) {
-    avb_assert(avb_strcmp(slot_data->vbmeta_images[0].partition_name, "boot") ==
-               0);
-    using_boot_for_vbmeta = true;
-  }
-
   /* If things check out, mangle the kernel command-line as needed. */
   if (result_should_continue(ret)) {
+    if (avb_strcmp(slot_data->vbmeta_images[0].partition_name, "vbmeta") != 0) {
+      avb_assert(
+          avb_strcmp(slot_data->vbmeta_images[0].partition_name, "boot") == 0);
+      using_boot_for_vbmeta = true;
+    }
+
+    /* Byteswap top-level vbmeta header since we'll need it below. */
+    avb_vbmeta_image_header_to_host_byte_order(
+        (const AvbVBMetaImageHeader*)slot_data->vbmeta_images[0].vbmeta_data,
+        &toplevel_vbmeta);
+
     /* Fill in |ab_suffix| field. */
     slot_data->ab_suffix = avb_strdup(ab_suffix);
     if (slot_data->ab_suffix == NULL) {
@@ -1130,6 +1151,55 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
         break;
     }
 
+    /* Set androidboot.veritymode and androidboot.vbmeta.invalidate_on_error */
+    if (toplevel_vbmeta.flags & AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED) {
+      verity_mode = "disabled";
+    } else {
+      const char* dm_verity_mode;
+      char* new_ret;
+
+      switch (hashtree_error_mode) {
+        case AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE:
+          if (!cmdline_append_option(
+                  slot_data, "androidboot.vbmeta.invalidate_on_error", "yes")) {
+            ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+            goto fail;
+          }
+          verity_mode = "enforcing";
+          dm_verity_mode = "restart_on_corruption";
+          break;
+        case AVB_HASHTREE_ERROR_MODE_RESTART:
+          verity_mode = "enforcing";
+          dm_verity_mode = "restart_on_corruption";
+          break;
+        case AVB_HASHTREE_ERROR_MODE_EIO:
+          verity_mode = "eio";
+          /* For now there's no option to specify the EIO mode. So
+           * just use 'ignore_zero_blocks' since that's already set
+           * and dm-verity-target.c supports specifying this multiple
+           * times.
+           */
+          dm_verity_mode = "ignore_zero_blocks";
+          break;
+        case AVB_HASHTREE_ERROR_MODE_LOGGING:
+          verity_mode = "logging";
+          dm_verity_mode = "ignore_corruption";
+          break;
+      }
+      new_ret = avb_replace(
+          slot_data->cmdline, "$(ANDROID_VERITY_MODE)", dm_verity_mode);
+      avb_free(slot_data->cmdline);
+      slot_data->cmdline = new_ret;
+      if (slot_data->cmdline == NULL) {
+        goto fail;
+      }
+    }
+    if (!cmdline_append_option(
+            slot_data, "androidboot.veritymode", verity_mode)) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto fail;
+    }
+
     if (out_data != NULL) {
       *out_data = slot_data;
     } else {
@@ -1213,6 +1283,9 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result) {
       break;
     case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
       ret = "ERROR_UNSUPPORTED_VERSION";
+      break;
+    case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT:
+      ret = "ERROR_INVALID_ARGUMENT";
       break;
       /* Do not add a 'default:' case here because of -Wswitch. */
   }
