@@ -331,7 +331,8 @@ TEST_F(AvbABFlowTest, EverythingIsValid) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(14,
         0,
@@ -361,7 +362,8 @@ TEST_F(AvbABFlowTest, EverythingIsValid) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -395,7 +397,8 @@ TEST_F(AvbABFlowTest, NoBootableSlots) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -428,7 +431,8 @@ TEST_F(AvbABFlowTest, TriesRemainingDecreasing) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         2,
@@ -445,7 +449,8 @@ TEST_F(AvbABFlowTest, TriesRemainingDecreasing) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         1,
@@ -462,7 +467,8 @@ TEST_F(AvbABFlowTest, TriesRemainingDecreasing) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -480,7 +486,8 @@ TEST_F(AvbABFlowTest, TriesRemainingDecreasing) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -512,7 +519,8 @@ TEST_F(AvbABFlowTest, TryingThenFallback) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         1,
@@ -529,7 +537,8 @@ TEST_F(AvbABFlowTest, TryingThenFallback) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -546,7 +555,8 @@ TEST_F(AvbABFlowTest, TryingThenFallback) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -580,7 +590,8 @@ TEST_F(AvbABFlowTest, TriesRemainingNotDecreasingIfNotPriority) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -615,7 +626,8 @@ TEST_F(AvbABFlowTest, InvalidSlotIsMarkedAsSuch) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -645,7 +657,8 @@ TEST_F(AvbABFlowTest, InvalidSlotIsMarkedAsSuch) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -675,7 +688,8 @@ TEST_F(AvbABFlowTest, InvalidSlotIsMarkedAsSuch) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -708,7 +722,8 @@ TEST_F(AvbABFlowTest, UnverifiedSlotIsMarkedAsSuch) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -738,7 +753,8 @@ TEST_F(AvbABFlowTest, UnverifiedSlotIsMarkedAsSuch) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -768,7 +784,8 @@ TEST_F(AvbABFlowTest, UnverifiedSlotIsMarkedAsSuch) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -801,7 +818,8 @@ TEST_F(AvbABFlowTest, RollbackIndexFailures) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -831,7 +849,8 @@ TEST_F(AvbABFlowTest, RollbackIndexFailures) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -865,7 +884,8 @@ TEST_F(AvbABFlowTest, StoredRollbackIndexBumped) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -896,7 +916,8 @@ TEST_F(AvbABFlowTest, StoredRollbackIndexBumped) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -928,7 +949,8 @@ TEST_F(AvbABFlowTest, StoredRollbackIndexBumped) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(0,
         0,
@@ -1155,7 +1177,8 @@ TEST_F(AvbABFlowTest, OtherMetadataStorage) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(14,
         0,
@@ -1185,7 +1208,8 @@ TEST_F(AvbABFlowTest, OtherMetadataStorage) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        false /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_NONE,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,
@@ -1228,7 +1252,8 @@ TEST_F(AvbABFlowTest, UnlockedUnverifiedSlot) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        true /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(14,
         0,
@@ -1258,7 +1283,8 @@ TEST_F(AvbABFlowTest, UnlockedUnverifiedSlot) {
   EXPECT_EQ(AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR,
             avb_ab_flow(ops_.avb_ab_ops(),
                         requested_partitions,
-                        true /* allow_verification_error */,
+                        AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                         &data));
   ExpMD(15,
         0,

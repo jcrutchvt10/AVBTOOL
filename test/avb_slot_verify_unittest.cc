@@ -65,7 +65,8 @@ TEST_F(AvbSlotVerifyTest, Basic) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   EXPECT_EQ(
@@ -74,7 +75,9 @@ TEST_F(AvbSlotVerifyTest, Basic) {
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1152 "
       "androidboot.vbmeta.digest="
-      "4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d",
+      "4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
 }
@@ -95,7 +98,8 @@ TEST_F(AvbSlotVerifyTest, BasicSha512) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   EXPECT_EQ(
@@ -105,7 +109,9 @@ TEST_F(AvbSlotVerifyTest, BasicSha512) {
       "androidboot.vbmeta.hash_alg=sha512 androidboot.vbmeta.size=1152 "
       "androidboot.vbmeta.digest="
       "cb913d2f1a884f4e04c1db5bb181f3133fd16ac02fb367a20ef0776c0b07b3656ad1f081"
-      "e01932cf70f38b8960877470b448f1588dff022808387cc52fa77e77",
+      "e01932cf70f38b8960877470b448f1588dff022808387cc52fa77e77 "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
 }
@@ -128,7 +134,8 @@ TEST_F(AvbSlotVerifyTest, BasicUnlocked) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   EXPECT_EQ(
@@ -137,7 +144,9 @@ TEST_F(AvbSlotVerifyTest, BasicUnlocked) {
       "androidboot.vbmeta.device_state=unlocked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1152 "
       "androidboot.vbmeta.digest="
-      "4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d",
+      "4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
 }
@@ -158,7 +167,8 @@ TEST_F(AvbSlotVerifyTest, SlotDataIsCorrect) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -177,14 +187,16 @@ TEST_F(AvbSlotVerifyTest, WrongPublicKey) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -197,7 +209,8 @@ TEST_F(AvbSlotVerifyTest, NoImage) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
 }
@@ -215,14 +228,16 @@ TEST_F(AvbSlotVerifyTest, UnsignedVBMeta) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -252,14 +267,16 @@ TEST_F(AvbSlotVerifyTest, CorruptedImage) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -291,7 +308,8 @@ TEST_F(AvbSlotVerifyTest, CorruptedMetadata) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
 }
@@ -316,7 +334,8 @@ TEST_F(AvbSlotVerifyTest, RollbackIndex) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -328,14 +347,16 @@ TEST_F(AvbSlotVerifyTest, RollbackIndex) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -395,7 +416,8 @@ TEST_F(AvbSlotVerifyTest, LoadEntirePartitionIfAllowingVerificationError) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
 
@@ -482,7 +504,8 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
 
@@ -517,7 +540,9 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1472 "
       "androidboot.vbmeta.digest="
-      "34cdb59b955aa35d4da97701f304fabf7392eecca8c50ff1a0b7b6e1c9aaa1b8",
+      "34cdb59b955aa35d4da97701f304fabf7392eecca8c50ff1a0b7b6e1c9aaa1b8 "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
   EXPECT_EQ(4UL, slot_data->rollback_indexes[0]);
   for (size_t n = 1; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
@@ -564,7 +589,8 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMetaCorruptBoot) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -582,14 +608,16 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMetaCorruptBoot) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -688,7 +716,8 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
 
@@ -754,7 +783,9 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=4416 "
       "androidboot.vbmeta.digest="
-      "4a45faa9adfeb94e9154fe682c11fef1a1a3d829b67cbf1a12ac7f0aa4f8e2e4",
+      "4a45faa9adfeb94e9154fe682c11fef1a1a3d829b67cbf1a12ac7f0aa4f8e2e4 "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
@@ -805,7 +836,8 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionCorruptBoot) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -823,14 +855,16 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionCorruptBoot) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -882,14 +916,16 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionKeyMismatch) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -940,7 +976,8 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionRollbackIndexFail) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -953,14 +990,16 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionRollbackIndexFail) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            true /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
@@ -973,7 +1012,8 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionRollbackIndexFail) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
 }
@@ -1043,7 +1083,8 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
 
@@ -1078,7 +1119,9 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionNoSlots) {
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=4416 "
       "androidboot.vbmeta.digest="
-      "4a45faa9adfeb94e9154fe682c11fef1a1a3d829b67cbf1a12ac7f0aa4f8e2e4",
+      "4a45faa9adfeb94e9154fe682c11fef1a1a3d829b67cbf1a12ac7f0aa4f8e2e4 "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
   EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
   EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
@@ -1161,7 +1204,8 @@ TEST_F(AvbSlotVerifyTest, PartitionsOtherThanBoot) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
 
@@ -1216,7 +1260,8 @@ TEST_F(AvbSlotVerifyTest, PublicKeyMetadata) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   EXPECT_EQ(
@@ -1225,7 +1270,9 @@ TEST_F(AvbSlotVerifyTest, PublicKeyMetadata) {
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=2688 "
       "androidboot.vbmeta.digest="
-      "5edcaa54f40382ee6a2fc3b86cdf383348b35ed07955e83ea32d84b69a97eaa0",
+      "5edcaa54f40382ee6a2fc3b86cdf383348b35ed07955e83ea32d84b69a97eaa0 "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
 }
@@ -1290,7 +1337,7 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
           "1 PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
           "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) 4096 4096 257 257 sha1 "
           "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 2 "
-          "restart_on_corruption ignore_zero_blocks\" root=/dev/dm-0'\n"
+          "$(ANDROID_VERITY_MODE) ignore_zero_blocks\" root=/dev/dm-0'\n"
           "    Kernel Cmdline descriptor:\n"
           "      Flags:                 2\n"
           "      Kernel Cmdline:        "
@@ -1313,7 +1360,8 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   if (hashtree_verification_on) {
@@ -1329,9 +1377,13 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
         "androidboot.vbmeta.device_state=locked "
         "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1536 "
         "androidboot.vbmeta.digest="
-        "51ea1638d8cc19a7a15b2bade22d155fb5150a6e376171ea1a89b7d6c89d6f17",
+        "946996b4cd78f2c060f6bb062b94054b809cbfbe9bf4425df263a0e55395ceea "
+        "androidboot.vbmeta.invalidate_on_error=yes "
+        "androidboot.veritymode=enforcing",
         std::string(slot_data->cmdline));
   } else {
+    // NOTE: androidboot.veritymode is 'disabled', not 'enforcing' and
+    // androidboot.vbmeta.invalidate_on_error isn't set.
     EXPECT_EQ(
         "root=PARTUUID=1234-fake-guid-for:system_a should_be_in_both=1 "
         "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
@@ -1339,7 +1391,8 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
         "androidboot.vbmeta.device_state=locked "
         "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1536 "
         "androidboot.vbmeta.digest="
-        "877daa21c04df1d9e1776bc6169c98de947ce44b1b34b545021bb3f34e287da6",
+        "c74338b2b366f7f774d264abb4ac06c997cbaacbf5edd70a6ef1a552f744076b "
+        "androidboot.veritymode=disabled",
         std::string(slot_data->cmdline));
   }
   avb_slot_verify_data_free(slot_data);
@@ -1460,7 +1513,7 @@ TEST_F(AvbSlotVerifyTest, NoVBMetaPartition) {
       "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 32768 verity 1 "
       "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
       "4096 4096 4096 4096 sha1 c9ffc3bfae5000269a55a56621547fd1fcf819df "
-      "d00df00d 2 restart_on_corruption ignore_zero_blocks\" root=/dev/dm-0'\n"
+      "d00df00d 2 $(ANDROID_VERITY_MODE) ignore_zero_blocks\" root=/dev/dm-0'\n"
       "    Kernel Cmdline descriptor:\n"
       "      Flags:                 2\n"
       "      Kernel Cmdline:        "
@@ -1508,7 +1561,8 @@ TEST_F(AvbSlotVerifyTest, NoVBMetaPartition) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   // Note 'boot' in the value androidboot.vbmeta.device since we've
@@ -1523,7 +1577,9 @@ TEST_F(AvbSlotVerifyTest, NoVBMetaPartition) {
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=5312 "
       "androidboot.vbmeta.digest="
-      "87bf39949a560f93d54aa0a5e9d158439110141246e40fb103f131633a3ca456",
+      "6b06719a940e5d8fa53ffef91eb4f0517ff0dda9833b90be1c9624ab3a5261d2 "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
 }
@@ -1576,7 +1632,8 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionEnforceFlagsZero) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
 }
@@ -1630,9 +1687,171 @@ TEST_F(AvbSlotVerifyTest, ChainedPartitionEnforceNoChainPartitions) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_EQ(nullptr, slot_data);
+}
+
+TEST_F(AvbSlotVerifyTest, HashtreeErrorModes) {
+  const size_t MiB = 1024 * 1024;
+  const size_t system_size = 16 * MiB;
+  const size_t system_part_size = 32 * MiB;
+  base::FilePath system_path = GenerateImage("system.img", system_size);
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name system "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\"",
+                 system_path.value().c_str(),
+                 (int)system_part_size);
+
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      base::StringPrintf("--setup_rootfs_from_kernel %s "
+                                         "--include_descriptors_from_image %s"
+                                         " --internal_release_string \"\"",
+                                         system_path.value().c_str(),
+                                         system_path.value().c_str()));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+
+  // For AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE we should get
+  // androidboot.vbmeta.invalidate_on_error=yes and
+  // androidboot.veritymode=enforcing. We should get
+  // 'restart_on_corruption' in the dm="..." string.
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(
+      "dm=\"1 vroot none ro 1,0 32768 verity 1 "
+      "PARTUUID=1234-fake-guid-for:system "
+      "PARTUUID=1234-fake-guid-for:system 4096 4096 4096 4096 sha1 "
+      "c9ffc3bfae5000269a55a56621547fd1fcf819df d00df00d 2 "
+      "restart_on_corruption ignore_zero_blocks\" root=/dev/dm-0 "
+      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta "
+      "androidboot.vbmeta.avb_version=1.0 "
+      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.hash_alg=sha256 "
+      "androidboot.vbmeta.size=1664 "
+      "androidboot.vbmeta.digest="
+      "e6c8c7d819f6b05ec0ebf7f73ee3b09f8d395e70ee040fe34f8fa6bccc8df798 "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
+      std::string(slot_data->cmdline));
+  avb_slot_verify_data_free(slot_data);
+
+  // For AVB_HASHTREE_ERROR_MODE_RESTART we should get
+  // androidboot.veritymode=enforcing and
+  // androidboot.vbmeta.invalidate_on_error should be unset. We should
+  // get 'restart_on_corruption' in the dm="..." string.
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(
+      "dm=\"1 vroot none ro 1,0 32768 verity 1 "
+      "PARTUUID=1234-fake-guid-for:system "
+      "PARTUUID=1234-fake-guid-for:system 4096 4096 4096 4096 sha1 "
+      "c9ffc3bfae5000269a55a56621547fd1fcf819df d00df00d 2 "
+      "restart_on_corruption ignore_zero_blocks\" root=/dev/dm-0 "
+      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta "
+      "androidboot.vbmeta.avb_version=1.0 "
+      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.hash_alg=sha256 "
+      "androidboot.vbmeta.size=1664 "
+      "androidboot.vbmeta.digest="
+      "e6c8c7d819f6b05ec0ebf7f73ee3b09f8d395e70ee040fe34f8fa6bccc8df798 "
+      "androidboot.veritymode=enforcing",
+      std::string(slot_data->cmdline));
+  avb_slot_verify_data_free(slot_data);
+
+  // For AVB_HASHTREE_ERROR_MODE_EIO we should get
+  // androidboot.veritymode=eio and
+  // androidboot.vbmeta.invalidate_on_error should be unset. We should
+  // get 'ignore_zero_blocks' in the dm="..." string.
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_EIO,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(
+      "dm=\"1 vroot none ro 1,0 32768 verity 1 "
+      "PARTUUID=1234-fake-guid-for:system "
+      "PARTUUID=1234-fake-guid-for:system 4096 4096 4096 4096 sha1 "
+      "c9ffc3bfae5000269a55a56621547fd1fcf819df d00df00d 2 "
+      "ignore_zero_blocks ignore_zero_blocks\" root=/dev/dm-0 "
+      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta "
+      "androidboot.vbmeta.avb_version=1.0 "
+      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.hash_alg=sha256 "
+      "androidboot.vbmeta.size=1664 "
+      "androidboot.vbmeta.digest="
+      "e6c8c7d819f6b05ec0ebf7f73ee3b09f8d395e70ee040fe34f8fa6bccc8df798 "
+      "androidboot.veritymode=eio",
+      std::string(slot_data->cmdline));
+  avb_slot_verify_data_free(slot_data);
+
+  // For AVB_HASHTREE_ERROR_MODE_LOGGING we should get
+  // androidboot.veritymode=logging and
+  // androidboot.vbmeta.invalidate_on_error should be unset. We should
+  // get 'ignore_corruption' in the dm="..." string.
+  //
+  // Check AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT is returned
+  // unless we pass AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR.
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_LOGGING,
+                            &slot_data));
+  EXPECT_EQ(nullptr, slot_data);
+  // --
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_LOGGING,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(
+      "dm=\"1 vroot none ro 1,0 32768 verity 1 "
+      "PARTUUID=1234-fake-guid-for:system "
+      "PARTUUID=1234-fake-guid-for:system 4096 4096 4096 4096 sha1 "
+      "c9ffc3bfae5000269a55a56621547fd1fcf819df d00df00d 2 "
+      "ignore_corruption ignore_zero_blocks\" root=/dev/dm-0 "
+      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta "
+      "androidboot.vbmeta.avb_version=1.0 "
+      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.hash_alg=sha256 "
+      "androidboot.vbmeta.size=1664 "
+      "androidboot.vbmeta.digest="
+      "e6c8c7d819f6b05ec0ebf7f73ee3b09f8d395e70ee040fe34f8fa6bccc8df798 "
+      "androidboot.veritymode=logging",
+      std::string(slot_data->cmdline));
+  avb_slot_verify_data_free(slot_data);
 }
 
 }  // namespace avb
