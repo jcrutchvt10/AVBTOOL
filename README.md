@@ -331,7 +331,7 @@ hashtree is also appended to the image.
         [--include_descriptors_from_footer /path/to/image.bin]                     \
         [--setup_rootfs_from_kernel /path/to/image.bin]                            \
         [--output_vbmeta_image OUTPUT_IMAGE] [--do_not_append_vbmeta_image]        \
-        [--generate_fec] [--fec_num_roots FEC_NUM_ROOTS]                           \
+        [--do_not_generate_fec] [--fec_num_roots FEC_NUM_ROOTS]                    \
         [--signing_helper /path/to/external/signer]                                \
         [--append_to_release_string STR]
 
@@ -441,12 +441,14 @@ and `--salt`.
 The variable `BOARD_AVB_SYSTEM_ADD_HASHTREE_FOOTER_ARGS` can be used
 to specify additional options passed to `avbtool add_hashtree_footer`
 for `system.img`. Typical options to be used here include
-`--hash_algorithm`, `--salt`, `--block_size`, and `--generate_fec`.
+`--hash_algorithm`, `--salt`, `--block_size`, and
+`--do_not_generate_fec`.
 
 The variable `BOARD_AVB_VENDOR_ADD_HASHTREE_FOOTER_ARGS` can be used
 to specify additional options passed to `avbtool add_hashtree_footer`
 for `vendor.img`. Typical options to be used here include
-`--hash_algorithm`, `--salt`, `--block_size`, and `--generate_fec`.
+`--hash_algorithm`, `--salt`, `--block_size`, and
+`--do_not_generate_fec`.
 
 The variable `BOARD_AVB_DTBO_ADD_HASH_FOOTER_ARGS` can be used to
 specify additional options passed to `avbtool add_hash_footer` for
