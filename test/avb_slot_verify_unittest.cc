@@ -1299,7 +1299,8 @@ void AvbSlotVerifyTest::CmdlineWithHashtreeVerification(
                  "--partition_size %d --partition_name foobar "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem "
-                 "--internal_release_string \"\"",
+                 "--internal_release_string \"\" "
+                 "--do_not_generate_fec",
                  rootfs_path.value().c_str(),
                  (int)partition_size);
 
@@ -1429,7 +1430,8 @@ TEST_F(AvbSlotVerifyTest, NoVBMetaPartition) {
                  "--partition_size %d --partition_name system "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem "
-                 "--internal_release_string \"\"",
+                 "--internal_release_string \"\" "
+                 "--do_not_generate_fec",
                  system_path.value().c_str(),
                  (int)system_part_size);
 
@@ -1438,7 +1440,8 @@ TEST_F(AvbSlotVerifyTest, NoVBMetaPartition) {
                  "--partition_size %d --partition_name foobar "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem "
-                 "--internal_release_string \"\"",
+                 "--internal_release_string \"\" "
+                 "--do_not_generate_fec",
                  foobar_path.value().c_str(),
                  (int)foobar_part_size);
 
@@ -1447,7 +1450,8 @@ TEST_F(AvbSlotVerifyTest, NoVBMetaPartition) {
                  "--partition_size %d --partition_name bazboo "
                  "--algorithm SHA512_RSA4096 "
                  "--key test/data/testkey_rsa4096.pem "
-                 "--internal_release_string \"\"",
+                 "--internal_release_string \"\" "
+                 "--do_not_generate_fec",
                  bazboo_path.value().c_str(),
                  (int)bazboo_part_size);
 
@@ -1704,7 +1708,8 @@ TEST_F(AvbSlotVerifyTest, HashtreeErrorModes) {
                  "--partition_size %d --partition_name system "
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem "
-                 "--internal_release_string \"\"",
+                 "--internal_release_string \"\" "
+                 "--do_not_generate_fec",
                  system_path.value().c_str(),
                  (int)system_part_size);
 
