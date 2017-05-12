@@ -660,7 +660,8 @@ TEST_F(AvbAtxSlotVerifyTest, SlotVerifyWithAtx) {
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
                             "_a",
-                            false /* allow_verification_error */,
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);

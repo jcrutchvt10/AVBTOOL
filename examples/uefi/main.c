@@ -39,6 +39,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
   const char* requested_partitions[] = {"boot", NULL};
   bool unlocked = true;
   char* additional_cmdline = NULL;
+  AvbSlotVerifyFlags flags;
 
   InitializeLib(ImageHandle, SystemTable);
 
@@ -60,9 +61,15 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
              "\n",
              NULL);
 
+  flags = AVB_SLOT_VERIFY_FLAGS_NONE;
+  if (unlocked) {
+    flags |= AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR;
+  }
+
   ab_result = avb_ab_flow(ops->ab_ops,
                           requested_partitions,
-                          unlocked /* allow_verification_error */,
+                          flags,
+                          AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                           &slot_data);
   avb_printv("avb_ab_flow() returned ",
              avb_ab_flow_result_to_string(ab_result),
@@ -111,6 +118,9 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
       break;
     case AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS:
       avb_fatal("No bootable slots - enter repair mode\n");
+      break;
+    case AVB_AB_FLOW_RESULT_ERROR_INVALID_ARGUMENT:
+      avb_fatal("Invalid arguments passed\n");
       break;
   }
   uefi_avb_ops_free(ops);

@@ -204,7 +204,8 @@ static AvbIOResult save_metadata_if_changed(AvbABOps* ab_ops,
 
 AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
                             const char* const* requested_partitions,
-                            bool allow_verification_error,
+                            AvbSlotVerifyFlags flags,
+                            AvbHashtreeErrorMode hashtree_error_mode,
                             AvbSlotVerifyData** out_data) {
   AvbOps* ops = ab_ops->ops;
   AvbSlotVerifyData* slot_data[2] = {NULL, NULL};
@@ -233,7 +234,8 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
       verify_result = avb_slot_verify(ops,
                                       requested_partitions,
                                       slot_suffixes[n],
-                                      allow_verification_error,
+                                      flags,
+                                      hashtree_error_mode,
                                       &slot_data[n]);
       switch (verify_result) {
         case AVB_SLOT_VERIFY_RESULT_ERROR_OOM:
@@ -249,7 +251,9 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
 
         case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
         case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
-          /* Even with |allow_verification_error| these mean game over. */
+          /* Even with AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR
+           * these mean game over.
+           */
           set_slot_unbootable = true;
           break;
 
@@ -257,20 +261,27 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
         case AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION:
         case AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX:
         case AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED:
-          if (allow_verification_error) {
+          if (flags & AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR) {
             /* Do nothing since we allow this. */
             avb_debugv("Allowing slot ",
                        slot_suffixes[n],
                        " which verified "
                        "with result ",
                        avb_slot_verify_result_to_string(verify_result),
-                       " because |allow_verification_error| is true.\n",
+                       " because "
+                       "AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR "
+                       "is set.\n",
                        NULL);
             saw_and_allowed_verification_error = true;
           } else {
             set_slot_unbootable = true;
           }
           break;
+
+        case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT:
+          ret = AVB_AB_FLOW_RESULT_ERROR_INVALID_ARGUMENT;
+          goto out;
+          /* Do not add a 'default:' case here because of -Wswitch. */
       }
 
       if (set_slot_unbootable) {
@@ -352,7 +363,7 @@ AvbABFlowResult avb_ab_flow(AvbABOps* ab_ops,
   data = slot_data[slot_index_to_boot];
   slot_data[slot_index_to_boot] = NULL;
   if (saw_and_allowed_verification_error) {
-    avb_assert(allow_verification_error);
+    avb_assert(flags & AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR);
     ret = AVB_AB_FLOW_RESULT_OK_WITH_VERIFICATION_ERROR;
   } else {
     ret = AVB_AB_FLOW_RESULT_OK;
@@ -503,6 +514,9 @@ const char* avb_ab_flow_result_to_string(AvbABFlowResult result) {
 
     case AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS:
       ret = "ERROR_NO_BOOTABLE_SLOTS";
+      break;
+    case AVB_AB_FLOW_RESULT_ERROR_INVALID_ARGUMENT:
+      ret = "ERROR_INVALID_ARGUMENT";
       break;
       /* Do not add a 'default:' case here because of -Wswitch. */
   }
