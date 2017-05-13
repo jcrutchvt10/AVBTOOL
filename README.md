@@ -185,7 +185,7 @@ validation operation (see `avb_validate_vbmeta_public_key()` in
 * `boot_control/`
     + An implementation of the Android `boot_control` HAL for use with
       boot loaders using the experimental `libavb_ab` A/B stack.
-* `Android.mk`
+* `Android.bp`
     + Build instructions for building `libavb` (a static library for use
       on the device), host-side libraries (for unit tests), and unit
       tests.
