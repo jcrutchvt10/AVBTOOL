@@ -628,10 +628,11 @@ Notes:
 
 * If the device is LOCKED, only an OS signed by an embedded
   verification key (see the previous section) shall be
-  accepted. Additionally, the rollback indexes in the verified image
-  must not exceed those stored on the device and
-  `stored_rollback_index[n]` on the device are expected to be updated
-  as specified in the previous section.
+  accepted. Additionally, `rollback_index[n]` as stored in the
+  verified image must be greater or equal than what's in
+  `stored_rollback_index[n]` on the device (for all `n`) and the
+  `stored_rollback_index[n]` array is expected to be updated as
+  specified in the previous section.
     + If the key used for verification was set by the end user, and
       the device has a screen, it must show a warning with the key
       fingerprint to convey that the device is booting a custom
