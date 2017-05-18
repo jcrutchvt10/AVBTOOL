@@ -24,7 +24,7 @@
 # SOFTWARE.
 #
 
-# This shell-script checks the symbols in libavb_host.a and fails
+# This shell-script checks the symbols in libavb.a and fails
 # if a reference not starting with avb_ is referenced. It's intended
 # to catch mistakes where the standard C library is inadvertently
 # used.
