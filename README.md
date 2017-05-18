@@ -316,7 +316,8 @@ added to an existing image as follows:
         [--setup_rootfs_from_kernel /path/to/image.bin]                            \
         [--output_vbmeta_image OUTPUT_IMAGE] [--do_not_append_vbmeta_image]        \
         [--signing_helper /path/to/external/signer]                                \
-        [--append_to_release_string STR]
+        [--append_to_release_string STR]                                           \
+        [--calc_max_image_size]
 
 An integrity footer containing the root digest and salt for a hashtree
 for a partition can be added to an existing image as follows. The
@@ -334,7 +335,8 @@ hashtree is also appended to the image.
         [--output_vbmeta_image OUTPUT_IMAGE] [--do_not_append_vbmeta_image]        \
         [--do_not_generate_fec] [--fec_num_roots FEC_NUM_ROOTS]                    \
         [--signing_helper /path/to/external/signer]                                \
-        [--append_to_release_string STR]
+        [--append_to_release_string STR]                                           \
+        [--calc_max_image_size]
 
 The size of an image with integrity footers can be changed using the
 `resize_image` command:
@@ -354,8 +356,13 @@ also specify that the vbmeta struct and footer not be added to the
 image being operated on.
 
 To calculate the maximum size of an image that will fit in a partition
-of a given size after having used the `avbtool add_hashtree_footer`
-command on it, use the `--calc_max_image_size` option:
+of a given size after having used the `avbtool add_hash_footer` or
+`avbtool add_hashtree_footer` commands on it, use the
+`--calc_max_image_size` option:
+
+    $ avbtool add_hash_footer --partition_size $((10*1024*1024)) \
+        --calc_max_image_size
+    10416128
 
     $ avbtool add_hashtree_footer --partition_size $((10*1024*1024)) \
         --calc_max_image_size

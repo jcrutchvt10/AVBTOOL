@@ -663,6 +663,40 @@ TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
   EXPECT_COMMAND(0, "rm -f %s.sparse", partition_path.value().c_str());
 }
 
+TEST_F(AvbToolTest, AddHashFooterCalcMaxImageSize) {
+  const size_t partition_size = 10 * 1024 * 1024;
+  base::FilePath output_path = testdir_.Append("max_size.txt");
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer "
+                 "--partition_size %zd "
+                 "--calc_max_image_size > %s",
+                 partition_size,
+                 output_path.value().c_str());
+  std::string max_image_size_data;
+  EXPECT_TRUE(base::ReadFileToString(output_path, &max_image_size_data));
+  EXPECT_EQ("10416128\n", max_image_size_data);
+  size_t max_image_size = atoll(max_image_size_data.c_str());
+
+  // Metadata takes up 68 KiB.
+  EXPECT_EQ(68 * 1024ULL, partition_size - max_image_size);
+
+  // Check that we can add a hash footer for an image this size for
+  // such a partition size.
+  base::FilePath boot_path = GenerateImage("boot", max_image_size);
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --image %s"
+                 " --partition_name boot"
+                 " --partition_size %zd"
+                 " --salt deadbeef"
+                 " --algorithm SHA512_RSA4096 "
+                 " --key test/data/testkey_rsa4096.pem"
+                 " --internal_release_string \"\"",
+                 boot_path.value().c_str(),
+                 partition_size);
+}
+
 void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
   const size_t rootfs_size = 1028 * 1024;
   const size_t partition_size = 1536 * 1024;

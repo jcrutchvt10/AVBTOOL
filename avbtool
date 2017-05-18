@@ -2050,9 +2050,6 @@ class Avb(object):
       instructions. There is one for when hashtree is not disabled and one for
       when it is.
 
-    Raises:
-      AvbError: If  |image| doesn't have a hashtree descriptor.
-
     """
 
     c = 'dm="1 vroot none ro 1,'
@@ -2491,8 +2488,8 @@ class Avb(object):
                       public_key_metadata_path, rollback_index, flags, props,
                       props_from_file, kernel_cmdlines,
                       setup_rootfs_from_kernel,
-                      include_descriptors_from_image, signing_helper,
-                      release_string, append_to_release_string,
+                      include_descriptors_from_image, calc_max_image_size,
+                      signing_helper, release_string, append_to_release_string,
                       output_vbmeta_image, do_not_append_vbmeta_image):
     """Implementation of the add_hash_footer on unsparse images.
 
@@ -2515,6 +2512,9 @@ class Avb(object):
         dm-verity kernel cmdline from.
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
+      calc_max_image_size: Don't store the footer - instead calculate the
+        maximum image size leaving enough room for metadata with the
+        given |partition_size|.
       signing_helper: Program which signs a hash and return signature.
       release_string: None or avbtool release string.
       append_to_release_string: None or string to append.
@@ -2524,6 +2524,17 @@ class Avb(object):
     Raises:
       AvbError: If an argument is incorrect.
     """
+    # First, calculate the maximum image size such that an image
+    # this size + metadata (footer + vbmeta struct) fits in
+    # |partition_size|.
+    max_metadata_size = self.MAX_VBMETA_SIZE + self.MAX_FOOTER_SIZE
+    max_image_size = partition_size - max_metadata_size
+
+    # If we're asked to only calculate the maximum image size, we're done.
+    if calc_max_image_size:
+      print '{}'.format(max_image_size)
+      return
+
     image = ImageHandler(image_filename)
 
     if partition_size % image.block_size != 0:
@@ -2546,12 +2557,6 @@ class Avb(object):
     # If anything goes wrong from here-on, restore the image back to
     # its original size.
     try:
-      # First, calculate the maximum image size such that an image
-      # this size + metadata (footer + vbmeta struct) fits in
-      # |partition_size|.
-      max_metadata_size = self.MAX_VBMETA_SIZE + self.MAX_FOOTER_SIZE
-      max_image_size = partition_size - max_metadata_size
-
       # If image size exceeds the maximum image size, fail.
       if image.image_size > max_image_size:
         raise AvbError('Image size of {} exceeds maximum image '
@@ -3265,12 +3270,18 @@ class AvbTool(object):
                             required=True)
     sub_parser.add_argument('--partition_name',
                             help='Partition name',
-                            required=True)
+                            default=None)
     sub_parser.add_argument('--hash_algorithm',
                             help='Hash algorithm to use (default: sha256)',
                             default='sha256')
     sub_parser.add_argument('--salt',
                             help='Salt in hex (default: /dev/urandom)')
+    sub_parser.add_argument('--calc_max_image_size',
+                            help=('Don\'t store the footer - '
+                                  'instead calculate the maximum image size '
+                                  'leaving enough room for metadata with '
+                                  'the given partition size.'),
+                            action='store_true')
     sub_parser.add_argument('--output_vbmeta_image',
                             help='Also write vbmeta struct to file',
                             type=argparse.FileType('wb'))
@@ -3518,7 +3529,8 @@ class AvbTool(object):
   def add_hash_footer(self, args):
     """Implements the 'add_hash_footer' sub-command."""
     args = self._fixup_common_args(args)
-    self.avb.add_hash_footer(args.image.name, args.partition_size,
+    self.avb.add_hash_footer(args.image.name if args.image else None,
+                             args.partition_size,
                              args.partition_name, args.hash_algorithm,
                              args.salt, args.chain_partition, args.algorithm,
                              args.key,
@@ -3527,7 +3539,7 @@ class AvbTool(object):
                              args.kernel_cmdline,
                              args.setup_rootfs_from_kernel,
                              args.include_descriptors_from_image,
-                             args.signing_helper,
+                             args.calc_max_image_size, args.signing_helper,
                              args.internal_release_string,
                              args.append_to_release_string,
                              args.output_vbmeta_image,
