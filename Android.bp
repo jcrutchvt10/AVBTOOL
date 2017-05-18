@@ -1,0 +1,215 @@
+//
+// Copyright (C) 2017 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+cc_defaults {
+    name: "avb_defaults",
+    cflags: [
+        "-D_FILE_OFFSET_BITS=64",
+        "-D_POSIX_C_SOURCE=199309L",
+        "-Wa,--noexecstack",
+        "-Werror",
+        "-Wall",
+        "-Wextra",
+        "-Wformat=2",
+        "-Wno-psabi",
+        "-Wno-unused-parameter",
+        "-ffunction-sections",
+        "-fstack-protector-strong",
+        "-g",
+        "-DAVB_ENABLE_DEBUG",
+        "-DAVB_COMPILATION",
+    ],
+    cppflags: [
+        "-Wnon-virtual-dtor",
+        "-fno-strict-aliasing",
+    ],
+    ldflags: [
+        "-Wl,--gc-sections",
+        "-rdynamic",
+    ],
+    target: {
+        darwin: {
+            enabled: false,
+        },
+    },
+}
+
+cc_defaults {
+    name: "avb_sources",
+    srcs: [
+        "libavb/avb_chain_partition_descriptor.c",
+        "libavb/avb_crc32.c",
+        "libavb/avb_crypto.c",
+        "libavb/avb_descriptor.c",
+        "libavb/avb_footer.c",
+        "libavb/avb_hash_descriptor.c",
+        "libavb/avb_hashtree_descriptor.c",
+        "libavb/avb_kernel_cmdline_descriptor.c",
+        "libavb/avb_property_descriptor.c",
+        "libavb/avb_rsa.c",
+        "libavb/avb_sha256.c",
+        "libavb/avb_sha512.c",
+        "libavb/avb_slot_verify.c",
+        "libavb/avb_util.c",
+        "libavb/avb_vbmeta_image.c",
+        "libavb/avb_version.c",
+    ],
+}
+
+cc_prebuilt_binary {
+    name: "avbtool",
+    srcs: ["avbtool"],
+    required: ["fec"],
+    device_supported: false,
+    host_supported: true,
+    target: {
+        darwin: {
+            enabled: false,
+        },
+    },
+}
+
+// Build libavb - this is a static library that depends
+// on only libc and doesn't drag in any other dependencies.
+cc_library_static {
+    name: "libavb",
+    defaults: [
+        "avb_defaults",
+        "avb_sources",
+    ],
+    host_supported: true,
+    export_include_dirs: ["."],
+    target: {
+        android: {
+            srcs: ["libavb/avb_sysdeps_posix.c"],
+        },
+        linux: {
+            cflags: ["-fno-stack-protector"],
+        },
+    },
+}
+
+// Build libavb_user for the target - in addition to libavb, it
+// includes libavb_ab, libavb_user and also depends on libbase and
+// libfs_mgr.
+cc_library_static {
+    name: "libavb_user",
+    defaults: [
+        "avb_defaults",
+        "avb_sources",
+    ],
+    export_include_dirs: ["."],
+    shared_libs: ["libbase"],
+    static_libs: ["libfs_mgr"],
+    srcs: [
+        "libavb/avb_sysdeps_posix.c",
+        "libavb_ab/avb_ab_flow.c",
+        "libavb_user/avb_ops_user.c",
+        "libavb_user/avb_user_verity.c",
+    ],
+}
+
+cc_binary {
+    name: "avbctl",
+    defaults: ["avb_defaults"],
+    static_libs: [
+        "libavb_user",
+        "libfs_mgr",
+    ],
+    shared_libs: ["libbase"],
+    srcs: ["tools/avbctl/avbctl.cc"],
+}
+
+cc_library_host_static {
+    name: "libavb_ab_host",
+    defaults: ["avb_defaults"],
+    export_include_dirs: ["."],
+    cflags: [
+        "-fno-stack-protector",
+    ],
+    srcs: ["libavb_ab/avb_ab_flow.c"],
+}
+
+cc_library_host_static {
+    name: "libavb_atx_host",
+    defaults: ["avb_defaults"],
+    export_include_dirs: ["."],
+    cflags: [
+        "-fno-stack-protector",
+    ],
+    srcs: ["libavb_atx/avb_atx_validate.c"],
+}
+
+cc_library_host_static {
+    name: "libavb_host_sysdeps",
+    defaults: ["avb_defaults"],
+    export_include_dirs: ["."],
+    srcs: ["libavb/avb_sysdeps_posix.c"],
+}
+
+cc_test_host {
+    name: "libavb_host_unittest",
+    defaults: ["avb_defaults"],
+    required: [
+        "simg2img",
+        "img2simg",
+        "avbtool",
+    ],
+    static_libs: [
+        "libavb",
+        "libavb_ab_host",
+        "libavb_atx_host",
+        "libgmock_host",
+        "libgtest_host",
+    ],
+    shared_libs: [
+        "libchrome",
+        "libcrypto",
+    ],
+    srcs: [
+        "test/avb_ab_flow_unittest.cc",
+        "test/avb_atx_validate_unittest.cc",
+        "test/avb_slot_verify_unittest.cc",
+        "test/avb_unittest_util.cc",
+        "test/avb_util_unittest.cc",
+        "test/avb_vbmeta_image_unittest.cc",
+        "test/avbtool_unittest.cc",
+        "test/fake_avb_ops.cc",
+        "test/avb_sysdeps_posix_testing.cc",
+    ],
+    host_ldlibs: ["-lrt"],
+}
+
+cc_library_host_static {
+    name: "libavb_host_user_code_test",
+    defaults: ["avb_defaults"],
+    srcs: ["test/user_code_test.cc"],
+}
+
+cc_library {
+    name: "bootctrl.avb",
+    defaults: ["avb_defaults"],
+    relative_install_path: "hw",
+    static_libs: [
+        "libavb_user",
+        "libfs_mgr",
+    ],
+    shared_libs: [
+        "libbase",
+        "libcutils",
+    ],
+    srcs: ["boot_control/boot_control_avb.c"],
+}
