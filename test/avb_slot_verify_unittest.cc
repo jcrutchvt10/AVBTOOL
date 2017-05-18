@@ -45,6 +45,7 @@ class AvbSlotVerifyTest : public BaseAvbToolTest {
   }
 
   void CmdlineWithHashtreeVerification(bool hashtree_verification_on);
+  void CmdlineWithChainedHashtreeVerification(bool hashtree_verification_on);
 
   FakeAvbOps ops_;
 };
@@ -1405,6 +1406,181 @@ TEST_F(AvbSlotVerifyTest, CmdlineWithHashtreeVerificationOff) {
 
 TEST_F(AvbSlotVerifyTest, CmdlineWithHashtreeVerificationOn) {
   CmdlineWithHashtreeVerification(true);
+}
+
+void AvbSlotVerifyTest::CmdlineWithChainedHashtreeVerification(
+    bool hashtree_verification_on) {
+  const size_t system_size = 1028 * 1024;
+  const size_t system_partition_size = 1536 * 1024;
+
+  // Generate a 1028 KiB file with known content.
+  std::vector<uint8_t> contents;
+  contents.resize(system_size);
+  for (size_t n = 0; n < system_size; n++)
+    contents[n] = uint8_t(n);
+  base::FilePath system_path = testdir_.Append("system_a.img");
+  EXPECT_EQ(system_size,
+            static_cast<const size_t>(
+                base::WriteFile(system_path,
+                                reinterpret_cast<const char*>(contents.data()),
+                                contents.size())));
+
+  // Check that we correctly generate dm-verity kernel cmdline
+  // snippets, if requested.
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name foobar "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\" "
+                 "--do_not_generate_fec "
+                 "--setup_as_rootfs_from_kernel",
+                 system_path.value().c_str(),
+                 (int)system_partition_size);
+
+  EXPECT_EQ(
+      "Footer version:           1.0\n"
+      "Image size:               1572864 bytes\n"
+      "Original image size:      1052672 bytes\n"
+      "VBMeta offset:            1069056\n"
+      "VBMeta size:              1664 bytes\n"
+      "--\n"
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          1088 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           0\n"
+      "Flags:                    0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Hashtree descriptor:\n"
+      "      Version of dm-verity:  1\n"
+      "      Image Size:            1052672 bytes\n"
+      "      Tree Offset:           1052672\n"
+      "      Tree Size:             16384 bytes\n"
+      "      Data Block Size:       4096 bytes\n"
+      "      Hash Block Size:       4096 bytes\n"
+      "      FEC num roots:         0\n"
+      "      FEC offset:            0\n"
+      "      FEC size:              0 bytes\n"
+      "      Hash Algorithm:        sha1\n"
+      "      Partition Name:        foobar\n"
+      "      Salt:                  d00df00d\n"
+      "      Root Digest:           e811611467dcd6e8dc4324e45f706c2bdd51db67\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 1\n"
+      "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 2056 verity 1 "
+      "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
+      "4096 4096 257 257 sha1 e811611467dcd6e8dc4324e45f706c2bdd51db67 "
+      "d00df00d 2 $(ANDROID_VERITY_MODE) ignore_zero_blocks\" root=/dev/dm-0'\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 2\n"
+      "      Kernel Cmdline:        "
+      "'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'\n",
+      InfoImage(system_path));
+
+  base::FilePath pk_path = testdir_.Append("testkey_rsa2048.avbpubkey");
+  EXPECT_COMMAND(
+      0,
+      "./avbtool extract_public_key --key test/data/testkey_rsa2048.pem"
+      " --output %s",
+      pk_path.value().c_str());
+
+  GenerateVBMetaImage(
+      "vbmeta_a.img",
+      "SHA256_RSA2048",
+      4,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf("--kernel_cmdline should_be_in_both=1 "
+                         "--algorithm SHA256_RSA2048 "
+                         "--flags %d "
+                         "--chain_partition system:1:%s "
+                         "--internal_release_string \"\"",
+                         hashtree_verification_on
+                             ? 0
+                             : AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED,
+                         pk_path.value().c_str()));
+
+  EXPECT_EQ(
+      base::StringPrintf("Minimum libavb version:   1.0\n"
+                         "Header Block:             256 bytes\n"
+                         "Authentication Block:     320 bytes\n"
+                         "Auxiliary Block:          1216 bytes\n"
+                         "Algorithm:                SHA256_RSA2048\n"
+                         "Rollback Index:           4\n"
+                         "Flags:                    %d\n"
+                         "Release String:           ''\n"
+                         "Descriptors:\n"
+                         "    Chain Partition descriptor:\n"
+                         "      Partition Name:          system\n"
+                         "      Rollback Index Location: 1\n"
+                         "      Public key (sha1):       "
+                         "cdbb77177f731920bbe0a0f94f84d9038ae0617d\n"
+                         "    Kernel Cmdline descriptor:\n"
+                         "      Flags:                 0\n"
+                         "      Kernel Cmdline:        'should_be_in_both=1'\n",
+                         hashtree_verification_on
+                             ? 0
+                             : AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED),
+      InfoImage(vbmeta_image_path_));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  // Check that avb_slot_verify() picks the cmdline descriptors based
+  // on their flags value... note that these descriptors are in the
+  // 'system' partition.
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  if (hashtree_verification_on) {
+    EXPECT_EQ(
+        "dm=\"1 vroot none ro 1,0 2056 verity 1 "
+        "PARTUUID=1234-fake-guid-for:system_a "
+        "PARTUUID=1234-fake-guid-for:system_a 4096 4096 257 257 sha1 "
+        "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 2 "
+        "restart_on_corruption ignore_zero_blocks\" root=/dev/dm-0 "
+        "should_be_in_both=1 "
+        "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
+        "androidboot.vbmeta.avb_version=1.0 "
+        "androidboot.vbmeta.device_state=locked "
+        "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=3456 "
+        "androidboot.vbmeta.digest="
+        "5ee1669b112625322657b83ec932c73dad9b0222011b5aa3e8273f4e0ee025dc "
+        "androidboot.vbmeta.invalidate_on_error=yes "
+        "androidboot.veritymode=enforcing",
+        std::string(slot_data->cmdline));
+  } else {
+    // NOTE: androidboot.veritymode is 'disabled', not 'enforcing' and
+    // androidboot.vbmeta.invalidate_on_error isn't set.
+    EXPECT_EQ(
+        "root=PARTUUID=1234-fake-guid-for:system_a should_be_in_both=1 "
+        "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
+        "androidboot.vbmeta.avb_version=1.0 "
+        "androidboot.vbmeta.device_state=locked "
+        "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=3456 "
+        "androidboot.vbmeta.digest="
+        "ae792c45a9d898b532ff9625b60043a8d9eae7e6106b9cba31837d50ba40f81c "
+        "androidboot.veritymode=disabled",
+        std::string(slot_data->cmdline));
+  }
+  avb_slot_verify_data_free(slot_data);
+}
+
+TEST_F(AvbSlotVerifyTest, CmdlineWithChainedHashtreeVerificationOff) {
+  CmdlineWithChainedHashtreeVerification(false);
+}
+
+TEST_F(AvbSlotVerifyTest, CmdlineWithChainedHashtreeVerificationOn) {
+  CmdlineWithChainedHashtreeVerification(true);
 }
 
 // In the event that there's no vbmeta partition, we treat the vbmeta
