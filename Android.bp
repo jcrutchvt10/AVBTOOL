@@ -75,11 +75,6 @@ cc_prebuilt_binary {
     required: ["fec"],
     device_supported: false,
     host_supported: true,
-    target: {
-        darwin: {
-            enabled: false,
-        },
-    },
 }
 
 // Build libavb - this is a static library that depends
