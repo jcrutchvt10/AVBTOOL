@@ -1233,8 +1233,102 @@ TEST_F(AvbSlotVerifyTest, PartitionsOtherThanBoot) {
   for (size_t n = 0; n < slot_data->loaded_partitions[1].data_size; n++) {
     EXPECT_EQ(slot_data->loaded_partitions[1].data[n], uint8_t(n));
   }
-
   avb_slot_verify_data_free(slot_data);
+
+  // Check that we loaded vbmeta_a, foo_a, and bar_a.
+  std::set<std::string> partitions = ops_.get_partition_names_read_from();
+  EXPECT_EQ(size_t(3), partitions.size());
+  EXPECT_TRUE(partitions.find("vbmeta_a") != partitions.end());
+  EXPECT_TRUE(partitions.find("foo_a") != partitions.end());
+  EXPECT_TRUE(partitions.find("bar_a") != partitions.end());
+}
+
+TEST_F(AvbSlotVerifyTest, OnlyLoadWhatHasBeenRequested) {
+  const size_t foo_partition_size = 16 * 1024 * 1024;
+  const size_t bar_partition_size = 32 * 1024 * 1024;
+  const size_t foo_image_size = 5 * 1024 * 1024;
+  const size_t bar_image_size = 10 * 1024 * 1024;
+  base::FilePath foo_path = GenerateImage("foo_a.img", foo_image_size);
+  base::FilePath bar_path = GenerateImage("bar_a.img", bar_image_size);
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --image %s"
+                 " --partition_name foo"
+                 " --partition_size %zd"
+                 " --salt deadbeef"
+                 " --internal_release_string \"\"",
+                 foo_path.value().c_str(),
+                 foo_partition_size);
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --image %s"
+                 " --partition_name bar"
+                 " --partition_size %zd"
+                 " --salt deadbeef"
+                 " --internal_release_string \"\"",
+                 bar_path.value().c_str(),
+                 bar_partition_size);
+
+  GenerateVBMetaImage("vbmeta_a.img",
+                      "SHA256_RSA2048",
+                      4,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      base::StringPrintf("--include_descriptors_from_image %s"
+                                         " --include_descriptors_from_image %s"
+                                         " --internal_release_string \"\"",
+                                         foo_path.value().c_str(),
+                                         bar_path.value().c_str()));
+
+  EXPECT_EQ(
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          896 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           4\n"
+      "Flags:                    0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Hash descriptor:\n"
+      "      Image Size:            5242880 bytes\n"
+      "      Hash Algorithm:        sha256\n"
+      "      Partition Name:        foo\n"
+      "      Salt:                  deadbeef\n"
+      "      Digest:                "
+      "184cb36243adb8b87d2d8c4802de32125fe294ec46753d732144ee65df68a23d\n"
+      "    Hash descriptor:\n"
+      "      Image Size:            10485760 bytes\n"
+      "      Hash Algorithm:        sha256\n"
+      "      Partition Name:        bar\n"
+      "      Salt:                  deadbeef\n"
+      "      Digest:                "
+      "baea4bbd261d0edf4d1fe5e6e5a36976c291eeba66b6a46fa81dba691327a727\n",
+      InfoImage(vbmeta_image_path_));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"foo", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(size_t(1), slot_data->num_loaded_partitions);
+  EXPECT_EQ("foo", std::string(slot_data->loaded_partitions[0].partition_name));
+  avb_slot_verify_data_free(slot_data);
+
+  // Check that we loaded vbmeta_a, foo_a but not bar_a.
+  std::set<std::string> partitions = ops_.get_partition_names_read_from();
+  EXPECT_EQ(size_t(2), partitions.size());
+  EXPECT_TRUE(partitions.find("vbmeta_a") != partitions.end());
+  EXPECT_TRUE(partitions.find("foo_a") != partitions.end());
+  EXPECT_TRUE(partitions.find("bar_a") == partitions.end());
 }
 
 TEST_F(AvbSlotVerifyTest, PublicKeyMetadata) {

@@ -43,6 +43,10 @@
 
 namespace avb {
 
+std::set<std::string> FakeAvbOps::get_partition_names_read_from() {
+  return partition_names_read_from_;
+}
+
 AvbIOResult FakeAvbOps::read_from_partition(const char* partition,
                                             int64_t offset,
                                             size_t num_bytes,
@@ -50,6 +54,8 @@ AvbIOResult FakeAvbOps::read_from_partition(const char* partition,
                                             size_t* out_num_read) {
   base::FilePath path =
       partition_dir_.Append(std::string(partition)).AddExtension("img");
+
+  partition_names_read_from_.insert(partition);
 
   if (offset < 0) {
     int64_t file_size;
