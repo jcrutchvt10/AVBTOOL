@@ -2033,6 +2033,46 @@ TEST_F(AvbSlotVerifyTest, HashtreeErrorModes) {
       "androidboot.veritymode=logging",
       std::string(slot_data->cmdline));
   avb_slot_verify_data_free(slot_data);
+
+  // Check we'll get androidboot.veritymode=disabled for any
+  // |hashtree_error_mode| if dm-verity is disabled.
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      base::StringPrintf("--setup_rootfs_from_kernel %s "
+                                         "--include_descriptors_from_image %s "
+                                         "--set_hashtree_disabled_flag "
+                                         "--internal_release_string \"\"",
+                                         system_path.value().c_str(),
+                                         system_path.value().c_str()));
+  for (int n = 0; n < 4; n++) {
+    AvbHashtreeErrorMode modes[4] = {
+        AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+        AVB_HASHTREE_ERROR_MODE_RESTART,
+        AVB_HASHTREE_ERROR_MODE_EIO,
+        AVB_HASHTREE_ERROR_MODE_LOGGING};
+    EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+              avb_slot_verify(ops_.avb_ops(),
+                              requested_partitions,
+                              "",
+                              AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                              modes[n],
+                              &slot_data));
+    EXPECT_NE(nullptr, slot_data);
+    EXPECT_EQ(
+        "root=PARTUUID=1234-fake-guid-for:system "
+        "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta "
+        "androidboot.vbmeta.avb_version=1.0 "
+        "androidboot.vbmeta.device_state=locked "
+        "androidboot.vbmeta.hash_alg=sha256 "
+        "androidboot.vbmeta.size=1664 "
+        "androidboot.vbmeta.digest="
+        "e73a466d63f451dcf5c051ff12a32c006ba282a34b37420c0d563f0282cad703 "
+        "androidboot.veritymode=disabled",
+        std::string(slot_data->cmdline));
+    avb_slot_verify_data_free(slot_data);
+  }
 }
 
 }  // namespace avb
