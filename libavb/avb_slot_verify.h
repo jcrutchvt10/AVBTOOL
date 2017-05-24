@@ -253,21 +253,21 @@ typedef struct {
 void avb_slot_verify_data_free(AvbSlotVerifyData* data);
 
 /* Performs a full verification of the slot identified by |ab_suffix|
- * and load the contents of the partitions whose name is in the
- * NULL-terminated string array |requested_partitions| (each partition
- * must use hash verification). If not using A/B, pass an empty string
- * (e.g. "", not NULL) for |ab_suffix|. This parameter must include
- * the leading underscore, for example "_a" should be used to refer to
- * the first slot.
+ * and load and verify the contents of the partitions whose name is in
+ * the NULL-terminated string array |requested_partitions| (each
+ * partition must use hash verification). If not using A/B, pass an
+ * empty string (e.g. "", not NULL) for |ab_suffix|. This parameter
+ * must include the leading underscore, for example "_a" should be
+ * used to refer to the first slot.
  *
  * Typically the |requested_partitions| array only contains a single
  * item for the boot partition, 'boot'.
  *
- * Verification includes loading data from the 'vbmeta', all hash
- * partitions, and possibly other partitions (with |ab_suffix|
- * appended), inspecting rollback indexes, and checking if the public
- * key used to sign the data is acceptable. The functions in |ops|
- * will be used to do this.
+ * Verification includes loading and verifying data from the 'vbmeta',
+ * the requested hash partitions, and possibly other partitions (with
+ * |ab_suffix| appended), inspecting rollback indexes, and checking if
+ * the public key used to sign the data is acceptable. The functions
+ * in |ops| will be used to do this.
  *
  * If |out_data| is not NULL, it will be set to a newly allocated
  * |AvbSlotVerifyData| struct containing all the data needed to
@@ -281,10 +281,11 @@ void avb_slot_verify_data_free(AvbSlotVerifyData* data);
  * ignore verification errors which is something needed in the
  * UNLOCKED state. See the AvbSlotVerifyFlags enumeration for details.
  *
- * The |hashtree_error_mode| parameter should be set the desired error
- * handling mode when hashtree validation fails inside the HLOS. This
- * value isn't used by libavb per se - it is forwarded to the HLOS
- * through the androidboot.veritymode cmdline parameter. See the
+ * The |hashtree_error_mode| parameter should be set to the desired
+ * error handling mode when hashtree validation fails inside the
+ * HLOS. This value isn't used by libavb per se - it is forwarded to
+ * the HLOS through the androidboot.veritymode and
+ * androidboot.vbmeta.invalidate_on_error cmdline parameters. See the
  * AvbHashtreeErrorMode enumeration for details.
  *
  * Also note that |out_data| is never set if

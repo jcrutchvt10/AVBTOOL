@@ -27,6 +27,7 @@
 
 #include <base/files/file_util.h>
 #include <map>
+#include <set>
 #include <string>
 
 #include <libavb_ab/libavb_ab.h>
@@ -154,6 +155,10 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
     permanent_attributes_hash_ = hash;
   }
 
+  // Gets the partition names that were passed to the
+  // read_from_partition() operation.
+  std::set<std::string> get_partition_names_read_from();
+
   // FakeAvbOpsDelegate methods.
   AvbIOResult read_from_partition(const char* partition,
                                   int64_t offset,
@@ -217,6 +222,8 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
 
   AvbAtxPermanentAttributes permanent_attributes_;
   std::string permanent_attributes_hash_;
+
+  std::set<std::string> partition_names_read_from_;
 };
 
 }  // namespace avb
