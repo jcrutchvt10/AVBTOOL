@@ -107,6 +107,17 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
     goto out;
   }
 
+  /* Don't bother loading or validating unless the partition was
+   * requested in the first place.
+   */
+  found = avb_strv_find_str(requested_partitions,
+                            (const char*)desc_partition_name,
+                            hash_desc.partition_name_len);
+  if (found == NULL) {
+    ret = AVB_SLOT_VERIFY_RESULT_OK;
+    goto out;
+  }
+
   if (!avb_str_concat(part_name,
                       sizeof part_name,
                       (const char*)desc_partition_name,
@@ -209,25 +220,21 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
 
 out:
 
-  if (ret == AVB_SLOT_VERIFY_RESULT_OK || result_should_continue(ret)) {
-    /* If this is the requested partition, copy to slot_data. */
-    found = avb_strv_find_str(requested_partitions,
-                              (const char*)desc_partition_name,
-                              hash_desc.partition_name_len);
-    if (found != NULL) {
-      AvbPartitionData* loaded_partition;
-      if (slot_data->num_loaded_partitions == MAX_NUMBER_OF_LOADED_PARTITIONS) {
-        avb_errorv(part_name, ": Too many loaded partitions.\n", NULL);
-        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-        goto fail;
-      }
-      loaded_partition =
-          &slot_data->loaded_partitions[slot_data->num_loaded_partitions++];
-      loaded_partition->partition_name = avb_strdup(found);
-      loaded_partition->data_size = image_size;
-      loaded_partition->data = image_buf;
-      image_buf = NULL;
+  /* If it worked and something was loaded, copy to slot_data. */
+  if ((ret == AVB_SLOT_VERIFY_RESULT_OK || result_should_continue(ret)) &&
+      image_buf != NULL) {
+    AvbPartitionData* loaded_partition;
+    if (slot_data->num_loaded_partitions == MAX_NUMBER_OF_LOADED_PARTITIONS) {
+      avb_errorv(part_name, ": Too many loaded partitions.\n", NULL);
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto fail;
     }
+    loaded_partition =
+        &slot_data->loaded_partitions[slot_data->num_loaded_partitions++];
+    loaded_partition->partition_name = avb_strdup(found);
+    loaded_partition->data_size = image_size;
+    loaded_partition->data = image_buf;
+    image_buf = NULL;
   }
 
 fail:
