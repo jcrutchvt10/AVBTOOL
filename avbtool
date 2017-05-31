@@ -1061,6 +1061,20 @@ class AvbDescriptor(object):
     ret = desc + self.data + padding
     return bytearray(ret)
 
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+    """Verifies contents of the descriptor - used in verify_image sub-command.
+
+    Arguments:
+      image_dir: The directory of the file being verified.
+      image_ext: The extension of the file being verified (e.g. '.img').
+      expected_chain_partitions_map: A map from partition name to the
+        tuple (rollback_index_location, key_blob).
+
+    Returns:
+      True if the descriptor verifies, False otherwise.
+    """
+    # Nothing to do.
+    return True
 
 class AvbPropertyDescriptor(AvbDescriptor):
   """A class for property descriptors.
@@ -1131,6 +1145,20 @@ class AvbPropertyDescriptor(AvbDescriptor):
     ret = desc + self.key + '\0' + self.value + '\0' + padding
     return bytearray(ret)
 
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+    """Verifies contents of the descriptor - used in verify_image sub-command.
+
+    Arguments:
+      image_dir: The directory of the file being verified.
+      image_ext: The extension of the file being verified (e.g. '.img').
+      expected_chain_partitions_map: A map from partition name to the
+        tuple (rollback_index_location, key_blob).
+
+    Returns:
+      True if the descriptor verifies, False otherwise.
+    """
+    # Nothing to do.
+    return True
 
 class AvbHashtreeDescriptor(AvbDescriptor):
   """A class for hashtree descriptors.
@@ -1272,6 +1300,52 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     ret = desc + encoded_name + self.salt + self.root_digest + padding
     return bytearray(ret)
 
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+    """Verifies contents of the descriptor - used in verify_image sub-command.
+
+    Arguments:
+      image_dir: The directory of the file being verified.
+      image_ext: The extension of the file being verified (e.g. '.img').
+      expected_chain_partitions_map: A map from partition name to the
+        tuple (rollback_index_location, key_blob).
+
+    Returns:
+      True if the descriptor verifies, False otherwise.
+    """
+    image_filename = os.path.join(image_dir, self.partition_name + image_ext)
+    image = ImageHandler(image_filename)
+    # Generate the hashtree and checks that it matches what's in the file.
+    digest_size = len(hashlib.new(name=self.hash_algorithm).digest())
+    digest_padding = round_to_pow2(digest_size) - digest_size
+    (hash_level_offsets, tree_size) = calc_hash_level_offsets(
+      self.image_size, self.data_block_size, digest_size + digest_padding)
+    root_digest, hash_tree = generate_hash_tree(image, self.image_size,
+                                                self.data_block_size,
+                                                self.hash_algorithm, self.salt,
+                                                digest_padding,
+                                                hash_level_offsets,
+                                                tree_size)
+    # The root digest must match...
+    if root_digest != self.root_digest:
+      sys.stderr.write('hashtree of {} does not match descriptor\n'.
+                       format(image_filename))
+      return False
+    # ... also check that the on-disk hashtree matches
+    image.seek(self.tree_offset)
+    hash_tree_ondisk = image.read(self.tree_size)
+    if hash_tree != hash_tree_ondisk:
+      sys.stderr.write('hashtree of {} contains invalid data\n'.
+                       format(image_filename))
+      return False
+    # TODO: we could also verify that the FEC stored in the image is
+    # correct but this a) currently requires the 'fec' binary; and b)
+    # takes a long time; and c) is not strictly needed for
+    # verification purposes as we've already verified the root hash.
+    print ('{}: Successfully verified {} hashtree of {} for image of {} bytes'
+           .format(self.partition_name, self.hash_algorithm, image_filename,
+                   self.image_size))
+    return True
+
 
 class AvbHashDescriptor(AvbDescriptor):
   """A class for hash descriptors.
@@ -1371,6 +1445,34 @@ class AvbHashDescriptor(AvbDescriptor):
     ret = desc + encoded_name + self.salt + self.digest + padding
     return bytearray(ret)
 
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+    """Verifies contents of the descriptor - used in verify_image sub-command.
+
+    Arguments:
+      image_dir: The directory of the file being verified.
+      image_ext: The extension of the file being verified (e.g. '.img').
+      expected_chain_partitions_map: A map from partition name to the
+        tuple (rollback_index_location, key_blob).
+
+    Returns:
+      True if the descriptor verifies, False otherwise.
+    """
+    image_filename = os.path.join(image_dir, self.partition_name + image_ext)
+    image = ImageHandler(image_filename)
+    data = image.read(self.image_size)
+    ha = hashlib.new(self.hash_algorithm)
+    ha.update(self.salt)
+    ha.update(data)
+    digest = ha.digest()
+    if digest != self.digest:
+      sys.stderr.write('{} digest of {} does not match digest in descriptor\n'.
+                       format(self.hash_algorithm, image_filename))
+      return False
+    print ('{}: Successfully verified {} hash of {} for image of {} bytes'
+           .format(self.partition_name, self.hash_algorithm, image_filename,
+                   self.image_size))
+    return True
+
 
 class AvbKernelCmdlineDescriptor(AvbDescriptor):
   """A class for kernel command-line descriptors.
@@ -1447,6 +1549,20 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
     ret = desc + encoded_str + padding
     return bytearray(ret)
 
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+    """Verifies contents of the descriptor - used in verify_image sub-command.
+
+    Arguments:
+      image_dir: The directory of the file being verified.
+      image_ext: The extension of the file being verified (e.g. '.img').
+      expected_chain_partitions_map: A map from partition name to the
+        tuple (rollback_index_location, key_blob).
+
+    Returns:
+      True if the descriptor verifies, False otherwise.
+    """
+    # Nothing to verify.
+    return True
 
 class AvbChainPartitionDescriptor(AvbDescriptor):
   """A class for chained partition descriptors.
@@ -1534,6 +1650,45 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
     ret = desc + encoded_name + self.public_key + padding
     return bytearray(ret)
 
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+    """Verifies contents of the descriptor - used in verify_image sub-command.
+
+    Arguments:
+      image_dir: The directory of the file being verified.
+      image_ext: The extension of the file being verified (e.g. '.img').
+      expected_chain_partitions_map: A map from partition name to the
+        tuple (rollback_index_location, key_blob).
+
+    Returns:
+      True if the descriptor verifies, False otherwise.
+    """
+    value = expected_chain_partitions_map.get(self.partition_name)
+    if not value:
+      sys.stderr.write('No expected chain partition for partition {}. Use '
+                       '--expected_chain_partition to specify expected '
+                       'contents.\n'.
+                       format(self.partition_name))
+      return False
+    rollback_index_location, pk_blob = value
+
+    if self.rollback_index_location != rollback_index_location:
+      sys.stderr.write('Expected rollback_index_location {} does not '
+                       'match {} in descriptor for partition {}\n'.
+                       format(rollback_index_location,
+                              self.rollback_index_location,
+                              self.partition_name))
+      return False
+
+    if self.public_key != pk_blob:
+      sys.stderr.write('Expected public key blob does not match public '
+                       'key blob in descriptor for partition {}\n'.
+                       format(self.partition_name))
+      return False
+
+    print ('{}: Successfully verified chain partition descriptor matches '
+           'expected data'.format(self.partition_name))
+
+    return True
 
 DESCRIPTOR_CLASSES = [
     AvbPropertyDescriptor, AvbHashtreeDescriptor, AvbHashDescriptor,
@@ -1948,12 +2103,37 @@ class Avb(object):
     if num_printed == 0:
       o.write('    (none)\n')
 
-  def verify_image(self, image_filename):
+  def verify_image(self, image_filename, key_path, expected_chain_partitions):
     """Implements the 'verify_image' command.
 
     Arguments:
       image_filename: Image file to get information from (file object).
+      key_path: None or check that embedded public key matches key at given path.
+      expected_chain_partitions: List of chain partitions to check or None.
     """
+
+    expected_chain_partitions_map = {}
+    if expected_chain_partitions:
+      used_locations = {}
+      for cp in expected_chain_partitions:
+        cp_tokens = cp.split(':')
+        if len(cp_tokens) != 3:
+          raise AvbError('Malformed chained partition "{}".'.format(cp))
+        partition_name = cp_tokens[0]
+        rollback_index_location = int(cp_tokens[1])
+        file_path = cp_tokens[2]
+        pk_blob = open(file_path).read()
+        expected_chain_partitions_map[partition_name] = (rollback_index_location, pk_blob)
+
+    image_dir = os.path.dirname(image_filename)
+    image_ext = os.path.splitext(image_filename)[1]
+
+    key_blob = None
+    if key_path:
+      print 'Verifying image {} using key at {}'.format(image_filename, key_path)
+      key_blob = encode_rsa_key(key_path)
+    else:
+      print 'Verifying image {} using embedded public key'.format(image_filename)
 
     image = ImageHandler(image_filename)
     (footer, header, descriptors, image_size) = self._parse_image(image)
@@ -1964,8 +2144,32 @@ class Avb(object):
             header.auxiliary_data_block_size)
     image.seek(offset)
     vbmeta_blob = image.read(size)
+    h = AvbVBMetaHeader(vbmeta_blob[0:AvbVBMetaHeader.SIZE])
+    alg_name, _ = lookup_algorithm_by_type(header.algorithm_type)
     if not verify_vbmeta_signature(header, vbmeta_blob):
-      raise AvbError('Signature check failed.')
+      raise AvbError('Signature check failed for {} vbmeta struct {}'
+                     .format(alg_name, image_filename))
+
+    if key_blob:
+      # The embedded public key is in the auxiliary block at an offset.
+      key_offset = AvbVBMetaHeader.SIZE
+      key_offset += h.authentication_data_block_size
+      key_offset += h.public_key_offset
+      key_blob_in_vbmeta = vbmeta_blob[key_offset:key_offset + h.public_key_size]
+      if key_blob != key_blob_in_vbmeta:
+        raise AvbError('Embedded public key does not match given key.')
+
+    if footer:
+      print ('vbmeta: Successfully verified footer and {} vbmeta struct in {}'
+             .format(alg_name, image_filename))
+    else:
+      print ('vbmeta: Successfully verified {} vbmeta struct in {}'
+             .format(alg_name, image_filename))
+
+    for desc in descriptors:
+      if not desc.verify(image_dir, image_ext, expected_chain_partitions_map):
+        raise AvbError('Error verifying descriptor.')
+
 
   def _parse_image(self, image):
     """Gets information about an image.
@@ -3407,6 +3611,14 @@ class AvbTool(object):
                             help='Image to verify',
                             type=argparse.FileType('rb'),
                             required=True)
+    sub_parser.add_argument('--key',
+                            help='Check embedded public key matches KEY',
+                            metavar='KEY',
+                            required=False)
+    sub_parser.add_argument('--expected_chain_partition',
+                            help='Expected chain partition',
+                            metavar='PART_NAME:ROLLBACK_SLOT:KEY_PATH',
+                            action='append')
     sub_parser.set_defaults(func=self.verify_image)
 
     sub_parser = subparsers.add_parser('set_ab_metadata',
@@ -3591,7 +3803,8 @@ class AvbTool(object):
 
   def verify_image(self, args):
     """Implements the 'verify_image' sub-command."""
-    self.avb.verify_image(args.image.name)
+    self.avb.verify_image(args.image.name, args.key,
+                          args.expected_chain_partition)
 
   def make_atx_certificate(self, args):
     """Implements the 'make_atx_certificate' sub-command."""

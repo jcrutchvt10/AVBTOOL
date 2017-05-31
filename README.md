@@ -381,11 +381,6 @@ Here's an example invocation:
 
     /path/to/my_signing_program SHA256_RSA2048 /path/to/publickey.pem
 
-The `verify_image` command verifies that the signature on the vbmeta
-struct is valid and that it was made with the embedded public
-key. This can be used to check that a custom signing helper works as
-intended.
-
 The `append_vbmeta_image` command can be used to append an entire
 vbmeta blob to the end of another image. This is useful for cases when
 not using any vbmeta partitions, for example:
@@ -396,6 +391,60 @@ not using any vbmeta partitions, for example:
         --partition_size SIZE_OF_BOOT_PARTITION         \
         --vbmeta_image vbmeta.img
     $ fastboot flash boot boot-with-vbmeta-appended.img
+
+The `verify_image` command can be used to verify the contents of
+several image files at the same time. When invoked on an image the
+following checks are performed:
+
+* If the image has a VBMeta struct the signature is checked against
+  the embedded public key. If the image doesn't look like `vbmeta.img`
+  then a footer is looked for and used if present.
+
+* If the option `--key` is passed then a `.pem` file is expected and
+  it's checked that the embedded public key in said VBMeta struct
+  matches the given key.
+
+* All descriptors in the VBMeta struct are checked in the following
+  way:
+    + For a hash descriptor the image file corresponding to the
+      partition name is loaded and its digest is checked against that
+      in the descriptor.
+    + For a hashtree descriptor the image file corresponding to the
+      partition name is loaded and the hashtree is calculated and its
+      root digest compared to that in the descriptor.
+    + For a chained partition descriptor its contents is compared
+      against content that needs to be passed in via the
+      `--expected_chain_partition` options. The format for this option
+      is similar to that of the `--chain_partition` option. If there
+      is no `--expected_chain_partition` descriptor for the chain
+      partition descriptor the check fails.
+
+Here's an example for a setup where the digests for `boot.img` and
+`system.img` are stored in `vbmeta.img` which is signed with
+`my_key.pem`. It also checks that the chain partition for partition
+`foobar` uses rollback index 8 and that the public key in AVB format
+matches that of the file `foobar_vendor_key.avbpubkey`:
+
+    $ avbtool verify_image \
+         --image /path/to/vbmeta.img \
+         --key my_key.pem \
+         --expect_chained_partition foobar:8:foobar_vendor_key.avbpubkey
+
+    Verifying image /path/to/vbmeta.img using key at my_key.pem
+    vbmeta: Successfully verified SHA256_RSA4096 vbmeta struct in /path_to/vbmeta.img
+    boot: Successfully verified sha256 hash of /path/to/boot.img for image of 10543104 bytes
+    system: Successfully verified sha1 hashtree of /path/to/system.img for image of 1065213952 bytes
+    foobar: Successfully verified chain partition descriptor matches expected data
+
+In this example the `verify_image` command verifies the files
+`vbmeta.img`, `boot.img`, and `system.img` in the directory
+`/path/to`. The directory and file extension of the given image
+(e.g. `/path/to/vbmeta.img`) is used together with the partition name
+in the descriptor to calculate the filenames of the images holding
+hash and hashtree images.
+
+The `verify_image` command can also be used to check that a custom
+signing helper works as intended.
 
 ## Build System Integration
 
