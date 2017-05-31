@@ -1849,6 +1849,44 @@ TEST_F(AvbToolTest, VerifyImageChainPartition) {
                  pk8192_path.value().c_str());
 }
 
+TEST_F(AvbToolTest, PrintRequiredLibavbVersion) {
+  base::FilePath output_path = testdir_.Append("versions.txt");
+
+  const size_t boot_partition_size = 16 * 1024 * 1024;
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --rollback_index 0"
+                 " --partition_name boot"
+                 " --partition_size %zd"
+                 " --salt deadbeef"
+                 " --internal_release_string \"\""
+                 " --print_required_libavb_version >> %s",
+                 boot_partition_size,
+                 output_path.value().c_str());
+
+  const size_t system_partition_size = 10 * 1024 * 1024;
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d "
+                 "--partition_size %zd --partition_name system "
+                 "--internal_release_string \"\""
+                 " --print_required_libavb_version >> %s",
+                 system_partition_size,
+                 output_path.value().c_str());
+
+  EXPECT_COMMAND(0,
+                 "./avbtool make_vbmeta_image "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\""
+                 " --print_required_libavb_version >> %s",
+                 output_path.value().c_str());
+
+  // Check that "1.0\n" was printed for all three invocations.
+  std::string versions;
+  ASSERT_TRUE(base::ReadFileToString(output_path, &versions));
+  EXPECT_EQ(versions, std::string("1.0\n1.0\n1.0\n"));
+}
+
 TEST_F(AvbToolTest, MakeAtxPikCertificate) {
   base::FilePath subject_path = testdir_.Append("tmp_subject");
   ASSERT_TRUE(base::WriteFile(subject_path, "fake PIK subject", 16));
