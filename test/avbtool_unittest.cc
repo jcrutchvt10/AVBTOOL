@@ -263,6 +263,35 @@ TEST_F(AvbToolTest, CheckDescriptors) {
   EXPECT_EQ('\n', s[20]);
 }
 
+TEST_F(AvbToolTest, Padding) {
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      "--internal_release_string \"\"");
+
+  GenerateVBMetaImage("vbmeta_padded.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      "--internal_release_string \"\" --padding_size 4096");
+
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta.img");
+  base::FilePath vbmeta_padded_path = testdir_.Append("vbmeta_padded.img");
+  int64_t vbmeta_size, vbmeta_padded_size;
+  ASSERT_TRUE(base::GetFileSize(vbmeta_path, &vbmeta_size));
+  ASSERT_TRUE(base::GetFileSize(vbmeta_padded_path, &vbmeta_padded_size));
+
+  EXPECT_NE(vbmeta_size, vbmeta_padded_size);
+
+  // The padded size should be a multiple of 4096.
+  EXPECT_EQ(vbmeta_padded_size % 4096, 0);
+
+  // When rounded up the unpadded size should equal the padded size.
+  int64_t vbmeta_size_rounded_up = ((vbmeta_size + 4095) / 4096) * 4096;
+  EXPECT_EQ(vbmeta_size_rounded_up, vbmeta_padded_size);
+}
+
 TEST_F(AvbToolTest, CheckRollbackIndex) {
   uint64_t rollback_index = 42;
   GenerateVBMetaImage("vbmeta.img",
