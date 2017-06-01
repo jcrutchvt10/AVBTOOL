@@ -434,12 +434,14 @@ def lookup_algorithm_by_type(alg_type):
   raise AvbError('Unknown algorithm type {}'.format(alg_type))
 
 
-def raw_sign(signing_helper, algorithm_name, signature_num_bytes, key_path,
+def raw_sign(signing_helper, signing_helper_with_files,
+             algorithm_name, signature_num_bytes, key_path,
              raw_data_to_sign):
   """Computes a raw RSA signature using |signing_helper| or openssl.
 
   Arguments:
     signing_helper: Program which signs a hash and returns the signature.
+    signing_helper_with_files: Same as signing_helper but uses files instead.
     algorithm_name: The algorithm name as per the ALGORITHMS dict.
     signature_num_bytes: Number of bytes used to store the signature.
     key_path: Path to the private key file. Must be PEM format.
@@ -452,23 +454,35 @@ def raw_sign(signing_helper, algorithm_name, signature_num_bytes, key_path,
     Exception: If an error occurs.
   """
   p = None
-  if signing_helper is not None:
+  if signing_helper_with_files is not None:
+    signing_file = tempfile.NamedTemporaryFile()
+    signing_file.write(str(raw_data_to_sign))
+    signing_file.flush()
     p = subprocess.Popen(
-        [signing_helper, algorithm_name, key_path],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE)
+      [signing_helper_with_files, algorithm_name, key_path, signing_file.name])
+    retcode = p.wait()
+    if retcode != 0:
+      raise AvbError('Error signing')
+    signing_file.seek(0)
+    signature = bytearray(signing_file.read())
   else:
-    p = subprocess.Popen(
-        ['openssl', 'rsautl', '-sign', '-inkey', key_path, '-raw'],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE)
-  (pout, perr) = p.communicate(str(raw_data_to_sign))
-  retcode = p.wait()
-  if retcode != 0:
-    raise AvbError('Error signing: {}'.format(perr))
-  signature = bytearray(pout)
+    if signing_helper is not None:
+      p = subprocess.Popen(
+          [signing_helper, algorithm_name, key_path],
+          stdin=subprocess.PIPE,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.PIPE)
+    else:
+      p = subprocess.Popen(
+          ['openssl', 'rsautl', '-sign', '-inkey', key_path, '-raw'],
+          stdin=subprocess.PIPE,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.PIPE)
+    (pout, perr) = p.communicate(str(raw_data_to_sign))
+    retcode = p.wait()
+    if retcode != 0:
+      raise AvbError('Error signing: {}'.format(perr))
+    signature = bytearray(pout)
   if len(signature) != signature_num_bytes:
     raise AvbError('Error signing: Invalid length of signature')
   return signature
@@ -2334,7 +2348,9 @@ class Avb(object):
                         key_path, public_key_metadata_path, rollback_index,
                         flags, props, props_from_file, kernel_cmdlines,
                         setup_rootfs_from_kernel,
-                        include_descriptors_from_image, signing_helper,
+                        include_descriptors_from_image,
+                        signing_helper,
+                        signing_helper_with_files,
                         release_string,
                         append_to_release_string,
                         print_required_libavb_version):
@@ -2354,6 +2370,7 @@ class Avb(object):
       setup_rootfs_from_kernel: None or file to generate from.
       include_descriptors_from_image: List of file objects with descriptors.
       signing_helper: Program which signs a hash and return signature.
+      signing_helper_with_files: Same as signing_helper but uses files instead.
       release_string: None or avbtool release string to use instead of default.
       append_to_release_string: None or string to append.
       print_required_libavb_version: True to only print required libavb version.
@@ -2378,7 +2395,8 @@ class Avb(object):
         algorithm_name, key_path, public_key_metadata_path, descriptors,
         chain_partitions, rollback_index, flags, props, props_from_file,
         kernel_cmdlines, setup_rootfs_from_kernel, ht_desc_to_setup,
-        include_descriptors_from_image, signing_helper, release_string,
+        include_descriptors_from_image, signing_helper,
+        signing_helper_with_files, release_string,
         append_to_release_string)
 
     # Write entire vbmeta blob (header, authentication, auxiliary).
@@ -2393,6 +2411,7 @@ class Avb(object):
                             setup_rootfs_from_kernel,
                             ht_desc_to_setup,
                             include_descriptors_from_image, signing_helper,
+                            signing_helper_with_files,
                             release_string, append_to_release_string):
     """Generates a VBMeta blob.
 
@@ -2422,6 +2441,7 @@ class Avb(object):
       include_descriptors_from_image: List of file objects for which
         to insert descriptors from.
       signing_helper: Program which signs a hash and return signature.
+      signing_helper_with_files: Same as signing_helper but uses files instead.
       release_string: None or avbtool release string.
       append_to_release_string: None or string to append.
 
@@ -2598,7 +2618,9 @@ class Avb(object):
 
       # Calculate the signature.
       padding_and_hash = str(bytearray(alg.padding)) + binary_hash
-      binary_signature.extend(raw_sign(signing_helper, algorithm_name,
+      binary_signature.extend(raw_sign(signing_helper,
+                                       signing_helper_with_files,
+                                       algorithm_name,
                                        alg.signature_num_bytes, key_path,
                                        padding_and_hash))
 
@@ -2705,7 +2727,8 @@ class Avb(object):
                       props_from_file, kernel_cmdlines,
                       setup_rootfs_from_kernel,
                       include_descriptors_from_image, calc_max_image_size,
-                      signing_helper, release_string, append_to_release_string,
+                      signing_helper, signing_helper_with_files,
+                      release_string, append_to_release_string,
                       output_vbmeta_image, do_not_append_vbmeta_image,
                       print_required_libavb_version):
     """Implementation of the add_hash_footer on unsparse images.
@@ -2733,6 +2756,7 @@ class Avb(object):
         maximum image size leaving enough room for metadata with the
         given |partition_size|.
       signing_helper: Program which signs a hash and return signature.
+      signing_helper_with_files: Same as signing_helper but uses files instead.
       release_string: None or avbtool release string.
       append_to_release_string: None or string to append.
       output_vbmeta_image: If not None, also write vbmeta struct to this file.
@@ -2823,7 +2847,8 @@ class Avb(object):
           algorithm_name, key_path, public_key_metadata_path, [h_desc],
           chain_partitions, rollback_index, flags, props, props_from_file,
           kernel_cmdlines, setup_rootfs_from_kernel, ht_desc_to_setup,
-          include_descriptors_from_image, signing_helper, release_string,
+          include_descriptors_from_image, signing_helper,
+          signing_helper_with_files, release_string,
           append_to_release_string)
 
       # If the image isn't sparse, its size might not be a multiple of
@@ -2883,6 +2908,7 @@ class Avb(object):
                           setup_as_rootfs_from_kernel,
                           include_descriptors_from_image,
                           calc_max_image_size, signing_helper,
+                          signing_helper_with_files,
                           release_string, append_to_release_string,
                           output_vbmeta_image, do_not_append_vbmeta_image,
                           print_required_libavb_version):
@@ -2919,6 +2945,7 @@ class Avb(object):
         calculate the maximum image size leaving enough room for hashtree
         and metadata with the given |partition_size|.
       signing_helper: Program which signs a hash and return signature.
+      signing_helper_with_files: Same as signing_helper but uses files instead.
       release_string: None or avbtool release string.
       append_to_release_string: None or string to append.
       output_vbmeta_image: If not None, also write vbmeta struct to this file.
@@ -3069,7 +3096,8 @@ class Avb(object):
           algorithm_name, key_path, public_key_metadata_path, [ht_desc],
           chain_partitions, rollback_index, flags, props, props_from_file,
           kernel_cmdlines, setup_rootfs_from_kernel, ht_desc_to_setup,
-          include_descriptors_from_image, signing_helper, release_string,
+          include_descriptors_from_image, signing_helper,
+          signing_helper_with_files, release_string,
           append_to_release_string)
       padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
                         len(vbmeta_blob))
@@ -3107,7 +3135,8 @@ class Avb(object):
 
   def make_atx_certificate(self, output, authority_key_path, subject_key_path,
                            subject_key_version, subject,
-                           is_intermediate_authority, signing_helper):
+                           is_intermediate_authority, signing_helper,
+                           signing_helper_with_files):
     """Implements the 'make_atx_certificate' command.
 
     Android Things certificates are required for Android Things public key
@@ -3129,6 +3158,7 @@ class Avb(object):
       is_intermediate_authority: True if the certificate is for an intermediate
                                  authority.
       signing_helper: Program which signs a hash and returns the signature.
+      signing_helper_with_files: Same as signing_helper but uses files instead.
     """
     signed_data = bytearray()
     signed_data.extend(struct.pack('<I', 1))  # Format Version
@@ -3154,7 +3184,8 @@ class Avb(object):
       padding_and_hash.extend(alg.padding)
       hasher.update(signed_data)
       padding_and_hash.extend(hasher.digest())
-      signature.extend(raw_sign(signing_helper, algorithm_name,
+      signature.extend(raw_sign(signing_helper, signing_helper_with_files,
+                                algorithm_name,
                                 alg.signature_num_bytes, authority_key_path,
                                 padding_and_hash))
     output.write(signed_data)
@@ -3394,6 +3425,11 @@ class AvbTool(object):
                             required=False)
     sub_parser.add_argument('--signing_helper',
                             help='Path to helper used for signing',
+                            metavar='APP',
+                            default=None,
+                            required=False)
+    sub_parser.add_argument('--signing_helper_with_files',
+                            help='Path to helper used for signing using files',
                             metavar='APP',
                             default=None,
                             required=False)
@@ -3702,6 +3738,11 @@ class AvbTool(object):
                             metavar='APP',
                             default=None,
                             required=False)
+    sub_parser.add_argument('--signing_helper_with_files',
+                            help='Path to helper used for signing using files',
+                            metavar='APP',
+                            default=None,
+                            required=False)
     sub_parser.set_defaults(func=self.make_atx_certificate)
 
     sub_parser = subparsers.add_parser(
@@ -3764,6 +3805,7 @@ class AvbTool(object):
                                args.setup_rootfs_from_kernel,
                                args.include_descriptors_from_image,
                                args.signing_helper,
+                               args.signing_helper_with_files,
                                args.internal_release_string,
                                args.append_to_release_string,
                                args.print_required_libavb_version)
@@ -3786,7 +3828,9 @@ class AvbTool(object):
                              args.kernel_cmdline,
                              args.setup_rootfs_from_kernel,
                              args.include_descriptors_from_image,
-                             args.calc_max_image_size, args.signing_helper,
+                             args.calc_max_image_size,
+                             args.signing_helper,
+                             args.signing_helper_with_files,
                              args.internal_release_string,
                              args.append_to_release_string,
                              args.output_vbmeta_image,
@@ -3815,7 +3859,9 @@ class AvbTool(object):
                                  args.setup_rootfs_from_kernel,
                                  args.setup_as_rootfs_from_kernel,
                                  args.include_descriptors_from_image,
-                                 args.calc_max_image_size, args.signing_helper,
+                                 args.calc_max_image_size,
+                                 args.signing_helper,
+                                 args.signing_helper_with_files,
                                  args.internal_release_string,
                                  args.append_to_release_string,
                                  args.output_vbmeta_image,
@@ -3850,7 +3896,8 @@ class AvbTool(object):
                                   args.subject_key_version,
                                   args.subject.read(),
                                   args.subject_is_intermediate_authority,
-                                  args.signing_helper)
+                                  args.signing_helper,
+                                  args.signing_helper_with_files)
 
   def make_atx_permanent_attributes(self, args):
     """Implements the 'make_atx_permanent_attributes' sub-command."""
