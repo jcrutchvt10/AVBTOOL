@@ -2353,7 +2353,8 @@ class Avb(object):
                         signing_helper_with_files,
                         release_string,
                         append_to_release_string,
-                        print_required_libavb_version):
+                        print_required_libavb_version,
+                        padding_size):
     """Implements the 'make_vbmeta_image' command.
 
     Arguments:
@@ -2374,6 +2375,7 @@ class Avb(object):
       release_string: None or avbtool release string to use instead of default.
       append_to_release_string: None or string to append.
       print_required_libavb_version: True to only print required libavb version.
+      padding_size: If not 0, pads output so size is a multiple of the number.
 
     Raises:
       AvbError: If a chained partition is malformed.
@@ -2402,6 +2404,11 @@ class Avb(object):
     # Write entire vbmeta blob (header, authentication, auxiliary).
     output.seek(0)
     output.write(vbmeta_blob)
+
+    if padding_size > 0:
+      padded_size = round_to_multiple(len(vbmeta_blob), padding_size)
+      padding_needed = padded_size - len(vbmeta_blob)
+      output.write('\0' * padding_needed)
 
   def _generate_vbmeta_blob(self, algorithm_name, key_path,
                             public_key_metadata_path, descriptors,
@@ -3532,6 +3539,12 @@ class AvbTool(object):
     sub_parser.add_argument('--output',
                             help='Output file name',
                             type=argparse.FileType('wb'))
+    sub_parser.add_argument('--padding_size',
+                            metavar='NUMBER',
+                            help='If non-zero, pads output with NUL bytes so '
+                                 'its size is a multiple of NUMBER (default: 0)',
+                            type=parse_number,
+                            default=0)
     self._add_common_args(sub_parser)
     sub_parser.set_defaults(func=self.make_vbmeta_image)
 
@@ -3808,7 +3821,8 @@ class AvbTool(object):
                                args.signing_helper_with_files,
                                args.internal_release_string,
                                args.append_to_release_string,
-                               args.print_required_libavb_version)
+                               args.print_required_libavb_version,
+                               args.padding_size)
 
   def append_vbmeta_image(self, args):
     """Implements the 'append_vbmeta_image' sub-command."""
