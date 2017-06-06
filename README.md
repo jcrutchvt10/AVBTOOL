@@ -303,6 +303,7 @@ The content for the vbmeta partition can be generated as follows:
         [--setup_rootfs_from_kernel /path/to/image.bin]                            \
         [--chain_partition part_name:rollback_index_location:/path/to/key1.bin]    \
         [--signing_helper /path/to/external/signer]                                \
+        [--signing_helper_with_files /path/to/external/signer_with_files]          \
         [--print_required_libavb_version]                                          \
         [--append_to_release_string STR]
 
@@ -319,6 +320,7 @@ added to an existing image as follows:
         [--setup_rootfs_from_kernel /path/to/image.bin]                            \
         [--output_vbmeta_image OUTPUT_IMAGE] [--do_not_append_vbmeta_image]        \
         [--signing_helper /path/to/external/signer]                                \
+        [--signing_helper_with_files /path/to/external/signer_with_files]          \
         [--print_required_libavb_version]                                          \
         [--append_to_release_string STR]                                           \
         [--calc_max_image_size]
@@ -339,6 +341,7 @@ hashtree is also appended to the image.
         [--output_vbmeta_image OUTPUT_IMAGE] [--do_not_append_vbmeta_image]        \
         [--do_not_generate_fec] [--fec_num_roots FEC_NUM_ROOTS]                    \
         [--signing_helper /path/to/external/signer]                                \
+        [--signing_helper_with_files /path/to/external/signer_with_files]          \
         [--print_required_libavb_version]                                          \
         [--append_to_release_string STR]                                           \
         [--calc_max_image_size]
@@ -397,6 +400,18 @@ helper exits with a non-zero exit code, it means failure.
 Here's an example invocation:
 
     /path/to/my_signing_program SHA256_RSA2048 /path/to/publickey.pem
+
+The `--signing_helper_with_files` is similar to `--signing_helper`
+except that a temporary file is used to communicate with the helper
+instead of `STDIN` and `STDOUT`. This is useful in situations where
+the signing helper is using code which is outputting diagnostics on
+`STDOUT` instead of `STDERR`. Here's an example invocation
+
+    /path/to/my_signing_program_with_files SHA256_RSA2048 \
+      /path/to/publickey.pem /tmp/path/to/communication_file
+
+where the last positional argument is a file that contains the data to
+sign. The helper should write the signature in this file.
 
 The `append_vbmeta_image` command can be used to append an entire
 vbmeta blob to the end of another image. This is useful for cases when
