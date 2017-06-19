@@ -515,6 +515,7 @@ const char* avb_ab_flow_result_to_string(AvbABFlowResult result) {
     case AVB_AB_FLOW_RESULT_ERROR_NO_BOOTABLE_SLOTS:
       ret = "ERROR_NO_BOOTABLE_SLOTS";
       break;
+
     case AVB_AB_FLOW_RESULT_ERROR_INVALID_ARGUMENT:
       ret = "ERROR_INVALID_ARGUMENT";
       break;

@@ -114,6 +114,7 @@ cc_library_static {
         "libavb_ab/avb_ab_flow.c",
         "libavb_user/avb_ops_user.c",
         "libavb_user/avb_user_verity.c",
+        "libavb_user/avb_user_verification.c",
     ],
 }
 
