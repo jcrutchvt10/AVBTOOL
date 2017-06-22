@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-#include "avb_user_verity.h"
+#include "avb_user_verification.h"
 
 /* Maximum allow length (in bytes) of a partition name, including
  * ab_suffix.
@@ -126,9 +126,9 @@ out:
   return ret;
 }
 
-bool avb_user_verity_get(AvbOps* ops,
-                         const char* ab_suffix,
-                         bool* out_verity_enabled) {
+bool avb_user_verification_get(AvbOps* ops,
+                               const char* ab_suffix,
+                               bool* out_verification_enabled) {
   uint8_t vbmeta_image[AVB_VBMETA_IMAGE_HEADER_SIZE]; /* 256 bytes. */
   char partition_name[AVB_PART_NAME_MAX_SIZE];        /* 32 bytes. */
   AvbVBMetaImageHeader* header;
@@ -148,12 +148,13 @@ bool avb_user_verity_get(AvbOps* ops,
     goto out;
   }
 
-  /* Set/clear the HASHTREE_DISABLED bit, as requested. */
+  /* Set/clear the VERIFICATION_DISABLED bit, as requested. */
   header = (AvbVBMetaImageHeader*)vbmeta_image;
   flags = avb_be32toh(header->flags);
 
-  if (out_verity_enabled != NULL) {
-    *out_verity_enabled = !(flags & AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED);
+  if (out_verification_enabled != NULL) {
+    *out_verification_enabled =
+        !(flags & AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED);
   }
 
   ret = true;
@@ -162,9 +163,9 @@ out:
   return ret;
 }
 
-bool avb_user_verity_set(AvbOps* ops,
-                         const char* ab_suffix,
-                         bool enable_verity) {
+bool avb_user_verification_set(AvbOps* ops,
+                               const char* ab_suffix,
+                               bool enable_verification) {
   uint8_t vbmeta_image[AVB_VBMETA_IMAGE_HEADER_SIZE]; /* 256 bytes. */
   char partition_name[AVB_PART_NAME_MAX_SIZE];        /* 32 bytes. */
   uint64_t vbmeta_offset;
@@ -186,12 +187,12 @@ bool avb_user_verity_set(AvbOps* ops,
     goto out;
   }
 
-  /* Set/clear the HASHTREE_DISABLED bit, as requested. */
+  /* Set/clear the VERIFICATION_DISABLED bit, as requested. */
   header = (AvbVBMetaImageHeader*)vbmeta_image;
   flags = avb_be32toh(header->flags);
-  flags &= ~AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED;
-  if (!enable_verity) {
-    flags |= AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED;
+  flags &= ~AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED;
+  if (!enable_verification) {
+    flags |= AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED;
   }
   header->flags = avb_htobe32(flags);
 

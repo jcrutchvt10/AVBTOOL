@@ -244,6 +244,99 @@ fail:
   return ret;
 }
 
+static AvbSlotVerifyResult load_requested_partitions(
+    AvbOps* ops,
+    const char* const* requested_partitions,
+    const char* ab_suffix,
+    AvbSlotVerifyData* slot_data) {
+  AvbSlotVerifyResult ret;
+  uint8_t* image_buf = NULL;
+  size_t n;
+
+  if (ops->get_size_of_partition == NULL) {
+    avb_error("get_size_of_partition() not implemented.\n");
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT;
+    goto out;
+  }
+
+  for (n = 0; requested_partitions[n] != NULL; n++) {
+    char part_name[PART_NAME_MAX_SIZE];
+    AvbIOResult io_ret;
+    uint64_t image_size;
+    size_t part_num_read;
+    AvbPartitionData* loaded_partition;
+
+    if (!avb_str_concat(part_name,
+                        sizeof part_name,
+                        requested_partitions[n],
+                        avb_strlen(requested_partitions[n]),
+                        ab_suffix,
+                        avb_strlen(ab_suffix))) {
+      avb_error("Partition name and suffix does not fit.\n");
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
+      goto out;
+    }
+
+    io_ret = ops->get_size_of_partition(ops, part_name, &image_size);
+    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    } else if (io_ret != AVB_IO_RESULT_OK) {
+      avb_errorv(part_name, ": Error determining partition size.\n", NULL);
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+      goto out;
+    }
+    avb_debugv(part_name, ": Loading entire partition.\n", NULL);
+
+    image_buf = avb_malloc(image_size);
+    if (image_buf == NULL) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    }
+
+    io_ret = ops->read_from_partition(
+        ops, part_name, 0 /* offset */, image_size, image_buf, &part_num_read);
+    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    } else if (io_ret != AVB_IO_RESULT_OK) {
+      avb_errorv(part_name, ": Error loading data from partition.\n", NULL);
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+      goto out;
+    }
+    if (part_num_read != image_size) {
+      avb_errorv(part_name, ": Read fewer than requested bytes.\n", NULL);
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+      goto out;
+    }
+
+    /* Move to slot_data. */
+    if (slot_data->num_loaded_partitions == MAX_NUMBER_OF_LOADED_PARTITIONS) {
+      avb_errorv(part_name, ": Too many loaded partitions.\n", NULL);
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    }
+    loaded_partition =
+        &slot_data->loaded_partitions[slot_data->num_loaded_partitions++];
+    loaded_partition->partition_name = avb_strdup(requested_partitions[n]);
+    if (loaded_partition->partition_name == NULL) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    }
+    loaded_partition->data_size = image_size;
+    loaded_partition->data = image_buf;
+    image_buf = NULL;
+  }
+
+  ret = AVB_SLOT_VERIFY_RESULT_OK;
+
+out:
+  if (image_buf != NULL) {
+    avb_free(image_buf);
+  }
+  return ret;
+}
+
 static AvbSlotVerifyResult load_and_verify_vbmeta(
     AvbOps* ops,
     const char* const* requested_partitions,
@@ -560,6 +653,27 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
       vbmeta_header.authentication_data_block_size +
       vbmeta_header.auxiliary_data_block_size;
   vbmeta_image_data->verify_result = vbmeta_ret;
+
+  /* If verification has been disabled by setting a bit in the image,
+   * we're done... except that we need to load the entirety of the
+   * requested partitions.
+   */
+  if (vbmeta_header.flags & AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED) {
+    AvbSlotVerifyResult sub_ret;
+    avb_debugv(
+        full_partition_name, ": VERIFICATION_DISABLED bit is set.\n", NULL);
+    /* If load_requested_partitions() fail it is always a fatal
+     * failure (e.g. ERROR_INVALID_ARGUMENT, ERROR_OOM, etc.) rather
+     * than recoverable (e.g. one where result_should_continue()
+     * returns true) and we want to convey that error.
+     */
+    sub_ret = load_requested_partitions(
+        ops, requested_partitions, ab_suffix, slot_data);
+    if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
+      ret = sub_ret;
+    }
+    goto out;
+  }
 
   /* Now go through all descriptors and take the appropriate action:
    *
@@ -954,6 +1068,168 @@ static int cmdline_append_hex(AvbSlotVerifyData* slot_data,
   return ret;
 }
 
+static AvbSlotVerifyResult append_options(
+    AvbOps* ops,
+    AvbSlotVerifyData* slot_data,
+    AvbVBMetaImageHeader* toplevel_vbmeta,
+    AvbAlgorithmType algorithm_type,
+    AvbHashtreeErrorMode hashtree_error_mode) {
+  AvbSlotVerifyResult ret;
+  const char* verity_mode;
+  bool is_device_unlocked;
+  AvbIOResult io_ret;
+
+  /* Add androidboot.vbmeta.device option. */
+  if (!cmdline_append_option(slot_data,
+                             "androidboot.vbmeta.device",
+                             "PARTUUID=$(ANDROID_VBMETA_PARTUUID)")) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  }
+
+  /* Add androidboot.vbmeta.avb_version option. */
+  if (!cmdline_append_version(slot_data,
+                              "androidboot.vbmeta.avb_version",
+                              AVB_VERSION_MAJOR,
+                              AVB_VERSION_MINOR)) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  }
+
+  /* Set androidboot.avb.device_state to "locked" or "unlocked". */
+  io_ret = ops->read_is_device_unlocked(ops, &is_device_unlocked);
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
+    avb_error("Error getting device state.\n");
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+    goto out;
+  }
+  if (!cmdline_append_option(slot_data,
+                             "androidboot.vbmeta.device_state",
+                             is_device_unlocked ? "unlocked" : "locked")) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  }
+
+  /* Set androidboot.vbmeta.{hash_alg, size, digest} - use same hash
+   * function as is used to sign vbmeta.
+   */
+  switch (algorithm_type) {
+    /* Explicit fallthrough. */
+    case AVB_ALGORITHM_TYPE_NONE:
+    case AVB_ALGORITHM_TYPE_SHA256_RSA2048:
+    case AVB_ALGORITHM_TYPE_SHA256_RSA4096:
+    case AVB_ALGORITHM_TYPE_SHA256_RSA8192: {
+      AvbSHA256Ctx ctx;
+      size_t n, total_size = 0;
+      avb_sha256_init(&ctx);
+      for (n = 0; n < slot_data->num_vbmeta_images; n++) {
+        avb_sha256_update(&ctx,
+                          slot_data->vbmeta_images[n].vbmeta_data,
+                          slot_data->vbmeta_images[n].vbmeta_size);
+        total_size += slot_data->vbmeta_images[n].vbmeta_size;
+      }
+      if (!cmdline_append_option(
+              slot_data, "androidboot.vbmeta.hash_alg", "sha256") ||
+          !cmdline_append_uint64_base10(
+              slot_data, "androidboot.vbmeta.size", total_size) ||
+          !cmdline_append_hex(slot_data,
+                              "androidboot.vbmeta.digest",
+                              avb_sha256_final(&ctx),
+                              AVB_SHA256_DIGEST_SIZE)) {
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+        goto out;
+      }
+    } break;
+    /* Explicit fallthrough. */
+    case AVB_ALGORITHM_TYPE_SHA512_RSA2048:
+    case AVB_ALGORITHM_TYPE_SHA512_RSA4096:
+    case AVB_ALGORITHM_TYPE_SHA512_RSA8192: {
+      AvbSHA512Ctx ctx;
+      size_t n, total_size = 0;
+      avb_sha512_init(&ctx);
+      for (n = 0; n < slot_data->num_vbmeta_images; n++) {
+        avb_sha512_update(&ctx,
+                          slot_data->vbmeta_images[n].vbmeta_data,
+                          slot_data->vbmeta_images[n].vbmeta_size);
+        total_size += slot_data->vbmeta_images[n].vbmeta_size;
+      }
+      if (!cmdline_append_option(
+              slot_data, "androidboot.vbmeta.hash_alg", "sha512") ||
+          !cmdline_append_uint64_base10(
+              slot_data, "androidboot.vbmeta.size", total_size) ||
+          !cmdline_append_hex(slot_data,
+                              "androidboot.vbmeta.digest",
+                              avb_sha512_final(&ctx),
+                              AVB_SHA512_DIGEST_SIZE)) {
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+        goto out;
+      }
+    } break;
+    case _AVB_ALGORITHM_NUM_TYPES:
+      avb_assert_not_reached();
+      break;
+  }
+
+  /* Set androidboot.veritymode and androidboot.vbmeta.invalidate_on_error */
+  if (toplevel_vbmeta->flags & AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED) {
+    verity_mode = "disabled";
+  } else {
+    const char* dm_verity_mode;
+    char* new_ret;
+
+    switch (hashtree_error_mode) {
+      case AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE:
+        if (!cmdline_append_option(
+                slot_data, "androidboot.vbmeta.invalidate_on_error", "yes")) {
+          ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+          goto out;
+        }
+        verity_mode = "enforcing";
+        dm_verity_mode = "restart_on_corruption";
+        break;
+      case AVB_HASHTREE_ERROR_MODE_RESTART:
+        verity_mode = "enforcing";
+        dm_verity_mode = "restart_on_corruption";
+        break;
+      case AVB_HASHTREE_ERROR_MODE_EIO:
+        verity_mode = "eio";
+        /* For now there's no option to specify the EIO mode. So
+         * just use 'ignore_zero_blocks' since that's already set
+         * and dm-verity-target.c supports specifying this multiple
+         * times.
+         */
+        dm_verity_mode = "ignore_zero_blocks";
+        break;
+      case AVB_HASHTREE_ERROR_MODE_LOGGING:
+        verity_mode = "logging";
+        dm_verity_mode = "ignore_corruption";
+        break;
+    }
+    new_ret = avb_replace(
+        slot_data->cmdline, "$(ANDROID_VERITY_MODE)", dm_verity_mode);
+    avb_free(slot_data->cmdline);
+    slot_data->cmdline = new_ret;
+    if (slot_data->cmdline == NULL) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    }
+  }
+  if (!cmdline_append_option(
+          slot_data, "androidboot.veritymode", verity_mode)) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto out;
+  }
+
+  ret = AVB_SLOT_VERIFY_RESULT_OK;
+
+out:
+
+  return ret;
+}
+
 AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                     const char* const* requested_partitions,
                                     const char* ab_suffix,
@@ -963,10 +1239,8 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
   AvbSlotVerifyResult ret;
   AvbSlotVerifyData* slot_data = NULL;
   AvbAlgorithmType algorithm_type = AVB_ALGORITHM_TYPE_NONE;
-  AvbIOResult io_ret;
   bool using_boot_for_vbmeta = false;
   AvbVBMetaImageHeader toplevel_vbmeta;
-  const char* verity_mode;
   bool allow_verification_error =
       (flags & AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR);
 
@@ -1050,21 +1324,35 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       goto fail;
     }
 
-    /* Add androidboot.vbmeta.device option. */
-    if (!cmdline_append_option(slot_data,
-                               "androidboot.vbmeta.device",
-                               "PARTUUID=$(ANDROID_VBMETA_PARTUUID)")) {
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-      goto fail;
-    }
-
-    /* Add androidboot.vbmeta.avb_version option. */
-    if (!cmdline_append_version(slot_data,
-                                "androidboot.vbmeta.avb_version",
-                                AVB_VERSION_MAJOR,
-                                AVB_VERSION_MINOR)) {
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-      goto fail;
+    /* If verification is disabled, we are done ... we specifically
+     * don't want to add any androidboot.* options since verification
+     * is disabled.
+     */
+    if (toplevel_vbmeta.flags & AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED) {
+      /* Since verification is disabled we didn't process any
+       * descriptors and thus there's no cmdline... so set root= such
+       * that the system partition is mounted.
+       */
+      avb_assert(slot_data->cmdline == NULL);
+      slot_data->cmdline =
+          avb_strdup("root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)");
+      if (slot_data->cmdline == NULL) {
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+        goto fail;
+      }
+    } else {
+      /* Add options - any failure in append_options() is either an
+       * I/O or OOM error.
+       */
+      AvbSlotVerifyResult sub_ret = append_options(ops,
+                                                   slot_data,
+                                                   &toplevel_vbmeta,
+                                                   algorithm_type,
+                                                   hashtree_error_mode);
+      if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
+        ret = sub_ret;
+        goto fail;
+      }
     }
 
     /* Substitute $(ANDROID_SYSTEM_PARTUUID) and friends. */
@@ -1078,133 +1366,6 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       }
       avb_free(slot_data->cmdline);
       slot_data->cmdline = new_cmdline;
-    }
-
-    /* Set androidboot.avb.device_state to "locked" or "unlocked". */
-    bool is_device_unlocked;
-    io_ret = ops->read_is_device_unlocked(ops, &is_device_unlocked);
-    if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-      goto fail;
-    } else if (io_ret != AVB_IO_RESULT_OK) {
-      avb_error("Error getting device state.\n");
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
-      goto fail;
-    }
-    if (!cmdline_append_option(slot_data,
-                               "androidboot.vbmeta.device_state",
-                               is_device_unlocked ? "unlocked" : "locked")) {
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-      goto fail;
-    }
-
-    /* Set androidboot.vbmeta.{hash_alg, size, digest} - use same hash
-     * function as is used to sign vbmeta.
-     */
-    switch (algorithm_type) {
-      /* Explicit fallthrough. */
-      case AVB_ALGORITHM_TYPE_NONE:
-      case AVB_ALGORITHM_TYPE_SHA256_RSA2048:
-      case AVB_ALGORITHM_TYPE_SHA256_RSA4096:
-      case AVB_ALGORITHM_TYPE_SHA256_RSA8192: {
-        AvbSHA256Ctx ctx;
-        size_t n, total_size = 0;
-        avb_sha256_init(&ctx);
-        for (n = 0; n < slot_data->num_vbmeta_images; n++) {
-          avb_sha256_update(&ctx,
-                            slot_data->vbmeta_images[n].vbmeta_data,
-                            slot_data->vbmeta_images[n].vbmeta_size);
-          total_size += slot_data->vbmeta_images[n].vbmeta_size;
-        }
-        if (!cmdline_append_option(
-                slot_data, "androidboot.vbmeta.hash_alg", "sha256") ||
-            !cmdline_append_uint64_base10(
-                slot_data, "androidboot.vbmeta.size", total_size) ||
-            !cmdline_append_hex(slot_data,
-                                "androidboot.vbmeta.digest",
-                                avb_sha256_final(&ctx),
-                                AVB_SHA256_DIGEST_SIZE)) {
-          ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-          goto fail;
-        }
-      } break;
-      /* Explicit fallthrough. */
-      case AVB_ALGORITHM_TYPE_SHA512_RSA2048:
-      case AVB_ALGORITHM_TYPE_SHA512_RSA4096:
-      case AVB_ALGORITHM_TYPE_SHA512_RSA8192: {
-        AvbSHA512Ctx ctx;
-        size_t n, total_size = 0;
-        avb_sha512_init(&ctx);
-        for (n = 0; n < slot_data->num_vbmeta_images; n++) {
-          avb_sha512_update(&ctx,
-                            slot_data->vbmeta_images[n].vbmeta_data,
-                            slot_data->vbmeta_images[n].vbmeta_size);
-          total_size += slot_data->vbmeta_images[n].vbmeta_size;
-        }
-        if (!cmdline_append_option(
-                slot_data, "androidboot.vbmeta.hash_alg", "sha512") ||
-            !cmdline_append_uint64_base10(
-                slot_data, "androidboot.vbmeta.size", total_size) ||
-            !cmdline_append_hex(slot_data,
-                                "androidboot.vbmeta.digest",
-                                avb_sha512_final(&ctx),
-                                AVB_SHA512_DIGEST_SIZE)) {
-          ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-          goto fail;
-        }
-      } break;
-      case _AVB_ALGORITHM_NUM_TYPES:
-        avb_assert_not_reached();
-        break;
-    }
-
-    /* Set androidboot.veritymode and androidboot.vbmeta.invalidate_on_error */
-    if (toplevel_vbmeta.flags & AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED) {
-      verity_mode = "disabled";
-    } else {
-      const char* dm_verity_mode;
-      char* new_ret;
-
-      switch (hashtree_error_mode) {
-        case AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE:
-          if (!cmdline_append_option(
-                  slot_data, "androidboot.vbmeta.invalidate_on_error", "yes")) {
-            ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-            goto fail;
-          }
-          verity_mode = "enforcing";
-          dm_verity_mode = "restart_on_corruption";
-          break;
-        case AVB_HASHTREE_ERROR_MODE_RESTART:
-          verity_mode = "enforcing";
-          dm_verity_mode = "restart_on_corruption";
-          break;
-        case AVB_HASHTREE_ERROR_MODE_EIO:
-          verity_mode = "eio";
-          /* For now there's no option to specify the EIO mode. So
-           * just use 'ignore_zero_blocks' since that's already set
-           * and dm-verity-target.c supports specifying this multiple
-           * times.
-           */
-          dm_verity_mode = "ignore_zero_blocks";
-          break;
-        case AVB_HASHTREE_ERROR_MODE_LOGGING:
-          verity_mode = "logging";
-          dm_verity_mode = "ignore_corruption";
-          break;
-      }
-      new_ret = avb_replace(
-          slot_data->cmdline, "$(ANDROID_VERITY_MODE)", dm_verity_mode);
-      avb_free(slot_data->cmdline);
-      slot_data->cmdline = new_ret;
-      if (slot_data->cmdline == NULL) {
-        goto fail;
-      }
-    }
-    if (!cmdline_append_option(
-            slot_data, "androidboot.veritymode", verity_mode)) {
-      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-      goto fail;
     }
 
     if (out_data != NULL) {
