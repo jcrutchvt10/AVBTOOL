@@ -52,9 +52,13 @@ extern "C" {
  *
  * AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED: If this flag is set,
  * hashtree image verification will be disabled.
+ *
+ * AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED: If this flag is set,
+ * verification will be disabled and descriptors will not be parsed.
  */
 typedef enum {
-  AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED = (1 << 0)
+  AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED = (1 << 0),
+  AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED = (1 << 1)
 } AvbVBMetaImageFlags;
 
 /* Binary format for header of the vbmeta image.

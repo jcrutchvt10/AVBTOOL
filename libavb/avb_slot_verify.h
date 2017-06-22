@@ -192,7 +192,8 @@ typedef struct {
  * option depending on the value of |hashtree_error_mode|.
  *
  * Additionally, the |cmdline| field will have the following kernel
- * command-line options set:
+ * command-line options set (unless verification is disabled, see
+ * below):
  *
  *   androidboot.veritymode: This is set to 'disabled' if the
  *   AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED flag is set in top-level
@@ -227,14 +228,20 @@ typedef struct {
  *   necessarily the same version number of the on-disk metadata for
  *   the slot that was verified.
  *
- * Note that neither androidboot.slot_suffix nor androidboot.slot are
- * set in the |cmdline| field in |AvbSlotVerifyData| - you will have
- * to pass these yourself.
+ * Note that androidboot.slot_suffix is not set in the |cmdline| field
+ * in |AvbSlotVerifyData| - you will have to set this yourself.
  *
- * Also note that androidboot.veritymode is set by libavb and since
- * AVB only supports 'enforcing' and 'disabled' values, the boot
- * loader is relieved of managing any state related to dm-verity or
- * setting this cmdline parameter.
+ * If the |AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED| flag is set
+ * in the top-level vbmeta struct then only the top-level vbmeta
+ * struct is verified and descriptors will not processed. The return
+ * value will be set accordingly (if this flag is set via 'avbctl
+ * disable-verification' then the return value will be
+ * |AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION|) and
+ * |AvbSlotVerifyData| is returned. Additionally all partitions in the
+ * |requested_partitions| are loaded and the |cmdline| field is set to
+ * "root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)" and the GUID for the
+ * appropriate system partition is substituted in. Note that none of
+ * the androidboot.* options mentioned above will be set.
  *
  * This struct may grow in the future without it being considered an
  * ABI break.

@@ -46,6 +46,7 @@ class AvbSlotVerifyTest : public BaseAvbToolTest {
 
   void CmdlineWithHashtreeVerification(bool hashtree_verification_on);
   void CmdlineWithChainedHashtreeVerification(bool hashtree_verification_on);
+  void VerificationDisabled(bool use_avbctl);
 
   FakeAvbOps ops_;
 };
@@ -1675,6 +1676,154 @@ TEST_F(AvbSlotVerifyTest, CmdlineWithChainedHashtreeVerificationOff) {
 
 TEST_F(AvbSlotVerifyTest, CmdlineWithChainedHashtreeVerificationOn) {
   CmdlineWithChainedHashtreeVerification(true);
+}
+
+void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl) {
+  const size_t boot_part_size = 32 * 1024 * 1024;
+  const size_t dtbo_part_size = 4 * 1024 * 1024;
+  const size_t rootfs_size = 1028 * 1024;
+  const size_t partition_size = 1536 * 1024;
+
+  // Generate boot_a.img and dtbo_a.img since avb_slot_verify() will
+  // attempt to load them upon encountering the VERIFICATION_DISABLED
+  // flag.
+  base::FilePath boot_path = GenerateImage("boot_a.img", boot_part_size);
+  const size_t DTBO_DATA_OFFSET = 42;
+  base::FilePath dtbo_path =
+      GenerateImage("dtbo_a.img", dtbo_part_size, DTBO_DATA_OFFSET);
+
+  // Generate a 1028 KiB file with known content.
+  std::vector<uint8_t> rootfs;
+  rootfs.resize(rootfs_size);
+  for (size_t n = 0; n < rootfs_size; n++)
+    rootfs[n] = uint8_t(n);
+  base::FilePath rootfs_path = testdir_.Append("rootfs.bin");
+  EXPECT_EQ(rootfs_size,
+            static_cast<const size_t>(
+                base::WriteFile(rootfs_path,
+                                reinterpret_cast<const char*>(rootfs.data()),
+                                rootfs.size())));
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name foobar "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\" "
+                 "--do_not_generate_fec",
+                 rootfs_path.value().c_str(),
+                 (int)partition_size);
+
+  // Check that we correctly generate dm-verity kernel cmdline
+  // snippets, if requested.
+  GenerateVBMetaImage(
+      "vbmeta_a.img",
+      "SHA256_RSA2048",
+      4,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf(
+          "--setup_rootfs_from_kernel %s "
+          "--kernel_cmdline should_be_in_both=1 "
+          "--algorithm SHA256_RSA2048 "
+          "--flags %d "
+          "--internal_release_string \"\"",
+          rootfs_path.value().c_str(),
+          use_avbctl ? 0 : AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED));
+
+  EXPECT_EQ(
+      base::StringPrintf(
+          "Minimum libavb version:   1.0\n"
+          "Header Block:             256 bytes\n"
+          "Authentication Block:     320 bytes\n"
+          "Auxiliary Block:          960 bytes\n"
+          "Algorithm:                SHA256_RSA2048\n"
+          "Rollback Index:           4\n"
+          "Flags:                    %d\n"
+          "Release String:           ''\n"
+          "Descriptors:\n"
+          "    Kernel Cmdline descriptor:\n"
+          "      Flags:                 1\n"
+          "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 2056 verity "
+          "1 PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
+          "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) 4096 4096 257 257 sha1 "
+          "e811611467dcd6e8dc4324e45f706c2bdd51db67 d00df00d 2 "
+          "$(ANDROID_VERITY_MODE) ignore_zero_blocks\" root=/dev/dm-0'\n"
+          "    Kernel Cmdline descriptor:\n"
+          "      Flags:                 2\n"
+          "      Kernel Cmdline:        "
+          "'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'\n"
+          "    Kernel Cmdline descriptor:\n"
+          "      Flags:                 0\n"
+          "      Kernel Cmdline:        'should_be_in_both=1'\n",
+          use_avbctl ? 0 : AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED),
+      InfoImage(vbmeta_image_path_));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  // Manually set the flag the same way 'avbctl disable-verification'
+  // would do it.
+  if (use_avbctl) {
+    uint32_t flags_data;
+    flags_data = avb_htobe32(AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED);
+    EXPECT_EQ(AVB_IO_RESULT_OK,
+              ops_.avb_ops()->write_to_partition(
+                  ops_.avb_ops(),
+                  "vbmeta_a",
+                  offsetof(AvbVBMetaImageHeader, flags),
+                  sizeof flags_data,
+                  &flags_data));
+  }
+
+  // Check that avb_slot_verify() doesn't return any of the
+  // descriptors and instead return a kernel command-line with
+  // root=PARTUUID=<whatever_for_system_a> and none of the
+  // androidboot.vbmeta.* options are set. Also ensure all the
+  // requested partitions are loaded.
+  //
+  // Also if we modified via avbctl we should expect
+  // ERROR_VERIFICATION instead of OK.
+  //
+  AvbSlotVerifyResult expected_result = AVB_SLOT_VERIFY_RESULT_OK;
+  if (use_avbctl) {
+    expected_result = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
+  }
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", "dtbo", NULL};
+  EXPECT_EQ(expected_result,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ("root=PARTUUID=1234-fake-guid-for:system_a",
+            std::string(slot_data->cmdline));
+  // Also make sure that it actually loads the boot and dtbo partitions.
+  EXPECT_EQ(size_t(2), slot_data->num_loaded_partitions);
+  EXPECT_EQ("boot",
+            std::string(slot_data->loaded_partitions[0].partition_name));
+  EXPECT_EQ(boot_part_size, slot_data->loaded_partitions[0].data_size);
+  for (size_t n = 0; n < boot_part_size; n++) {
+    EXPECT_EQ(uint8_t(n), slot_data->loaded_partitions[0].data[n]);
+  }
+  EXPECT_EQ("dtbo",
+            std::string(slot_data->loaded_partitions[1].partition_name));
+  EXPECT_EQ(dtbo_part_size, slot_data->loaded_partitions[1].data_size);
+  for (size_t n = 0; n < dtbo_part_size; n++) {
+    EXPECT_EQ(uint8_t(n + DTBO_DATA_OFFSET),
+              slot_data->loaded_partitions[1].data[n]);
+  }
+  avb_slot_verify_data_free(slot_data);
+}
+
+TEST_F(AvbSlotVerifyTest, VerificationDisabledUnmodified) {
+  VerificationDisabled(false);  // use_avbctl
+}
+
+TEST_F(AvbSlotVerifyTest, VerificationDisabledModified) {
+  VerificationDisabled(true);  // use_avbctl
 }
 
 // In the event that there's no vbmeta partition, we treat the vbmeta

@@ -41,15 +41,87 @@ void usage(FILE* where, int /* argc */, char* argv[]) {
           "  %s COMMAND\n"
           "\n"
           "Commands:\n"
-          "  %s get-verity        - Prints whether verity is enabled in "
+          "  %s get-verity           - Prints whether verity is enabled in "
           "current slot.\n"
-          "  %s disable-verity    - Disable verity in current slot.\n"
-          "  %s enable-verity     - Enable verity in current slot.\n",
+          "  %s disable-verity       - Disable verity in current slot.\n"
+          "  %s enable-verity        - Enable verity in current slot.\n"
+          "  %s get-verification     - Prints whether verification is enabled "
+          "in current slot.\n"
+          "  %s disable-verification - Disable verification in current slot.\n"
+          "  %s enable-verification  - Enable verification in current slot.\n",
+          argv[0],
+          argv[0],
+          argv[0],
           argv[0],
           argv[0],
           argv[0],
           argv[0],
           argv[0]);
+}
+
+/* Function to enable and disable verification. The |ops| parameter
+ * should be an |AvbOps| from libavb_user.
+ */
+int do_set_verification(AvbOps* ops,
+                        const std::string& ab_suffix,
+                        bool enable_verification) {
+  bool verification_enabled;
+
+  if (!avb_user_verification_get(
+          ops, ab_suffix.c_str(), &verification_enabled)) {
+    fprintf(stderr, "Error getting whether verification is enabled.\n");
+    return EX_SOFTWARE;
+  }
+
+  if ((verification_enabled && enable_verification) ||
+      (!verification_enabled && !enable_verification)) {
+    fprintf(stdout,
+            "verification is already %s",
+            verification_enabled ? "enabled" : "disabled");
+    if (ab_suffix != "") {
+      fprintf(stdout, " on slot with suffix %s", ab_suffix.c_str());
+    }
+    fprintf(stdout, ".\n");
+    return EX_OK;
+  }
+
+  if (!avb_user_verification_set(ops, ab_suffix.c_str(), enable_verification)) {
+    fprintf(stderr, "Error setting verification.\n");
+    return EX_SOFTWARE;
+  }
+
+  fprintf(stdout,
+          "Successfully %s verification",
+          enable_verification ? "enabled" : "disabled");
+  if (ab_suffix != "") {
+    fprintf(stdout, " on slot with suffix %s", ab_suffix.c_str());
+  }
+  fprintf(stdout, ". Reboot the device for changes to take effect.\n");
+
+  return EX_OK;
+}
+
+/* Function to query if verification. The |ops| parameter should be an
+ * |AvbOps| from libavb_user.
+ */
+int do_get_verification(AvbOps* ops, const std::string& ab_suffix) {
+  bool verification_enabled;
+
+  if (!avb_user_verification_get(
+          ops, ab_suffix.c_str(), &verification_enabled)) {
+    fprintf(stderr, "Error getting whether verification is enabled.\n");
+    return EX_SOFTWARE;
+  }
+
+  fprintf(stdout,
+          "verification is %s",
+          verification_enabled ? "enabled" : "disabled");
+  if (ab_suffix != "") {
+    fprintf(stdout, " on slot with suffix %s", ab_suffix.c_str());
+  }
+  fprintf(stdout, ".\n");
+
+  return EX_OK;
 }
 
 /* Function to enable and disable dm-verity. The |ops| parameter
@@ -158,6 +230,12 @@ int main(int argc, char* argv[]) {
     ret = do_set_verity(ops, ab_suffix, true);
   } else if (strcmp(argv[1], "get-verity") == 0) {
     ret = do_get_verity(ops, ab_suffix);
+  } else if (strcmp(argv[1], "disable-verification") == 0) {
+    ret = do_set_verification(ops, ab_suffix, false);
+  } else if (strcmp(argv[1], "enable-verification") == 0) {
+    ret = do_set_verification(ops, ab_suffix, true);
+  } else if (strcmp(argv[1], "get-verification") == 0) {
+    ret = do_get_verification(ops, ab_suffix);
   } else {
     usage(stderr, argc, argv);
     ret = EX_USAGE;
