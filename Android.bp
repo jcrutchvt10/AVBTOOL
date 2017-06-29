@@ -24,6 +24,7 @@ cc_defaults {
         "-Wall",
         "-Wextra",
         "-Wformat=2",
+        "-Wmissing-prototypes",
         "-Wno-psabi",
         "-Wno-unused-parameter",
         "-ffunction-sections",
@@ -174,6 +175,9 @@ cc_test_host {
     shared_libs: [
         "libchrome",
         "libcrypto",
+    ],
+    cflags: [
+            "-Wno-missing-prototypes",
     ],
     srcs: [
         "test/avb_ab_flow_unittest.cc",
