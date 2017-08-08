@@ -32,13 +32,15 @@
 
 namespace {
 
+static bool g_opt_force = false;
+
 /* Prints program usage to |where|. */
 void usage(FILE* where, int /* argc */, char* argv[]) {
   fprintf(where,
           "%s - command-line tool for AVB.\n"
           "\n"
           "Usage:\n"
-          "  %s COMMAND\n"
+          "  %s [--force] COMMAND\n"
           "\n"
           "Commands:\n"
           "  %s get-verity           - Prints whether verity is enabled in "
@@ -57,6 +59,29 @@ void usage(FILE* where, int /* argc */, char* argv[]) {
           argv[0],
           argv[0],
           argv[0]);
+}
+
+/* Returns true if device is in LOCKED mode and --force wasn't
+ * passed. In this case also prints diagnostic message to stderr as a
+ * side-effect.
+ */
+bool is_locked_and_not_forced() {
+  std::string device_state;
+
+  device_state = android::base::GetProperty("ro.boot.vbmeta.device_state", "");
+  if (device_state == "locked" && !g_opt_force) {
+    fprintf(stderr,
+            "Manipulating vbmeta on a LOCKED device will likely cause the\n"
+            "device to fail booting with little chance of recovery.\n"
+            "\n"
+            "If you really want to do this, use the --force option.\n"
+            "\n"
+            "ONLY DO THIS IF YOU KNOW WHAT YOU ARE DOING.\n"
+            "\n");
+    return false;
+  }
+
+  return true;
 }
 
 /* Function to enable and disable verification. The |ops| parameter
@@ -83,6 +108,10 @@ int do_set_verification(AvbOps* ops,
     }
     fprintf(stdout, ".\n");
     return EX_OK;
+  }
+
+  if (!is_locked_and_not_forced()) {
+    return EX_NOPERM;
   }
 
   if (!avb_user_verification_set(ops, ab_suffix.c_str(), enable_verification)) {
@@ -149,6 +178,10 @@ int do_set_verity(AvbOps* ops,
     return EX_OK;
   }
 
+  if (!is_locked_and_not_forced()) {
+    return EX_NOPERM;
+  }
+
   if (!avb_user_verity_set(ops, ab_suffix.c_str(), enable_verity)) {
     fprintf(stderr, "Error setting verity.\n");
     return EX_SOFTWARE;
@@ -206,10 +239,21 @@ std::string get_ab_suffix() {
 
 }  // namespace
 
+enum class Command {
+  kNone,
+  kDisableVerity,
+  kEnableVerity,
+  kGetVerity,
+  kDisableVerification,
+  kEnableVerification,
+  kGetVerification,
+};
+
 int main(int argc, char* argv[]) {
   int ret;
   AvbOps* ops = nullptr;
   std::string ab_suffix = get_ab_suffix();
+  Command cmd = Command::kNone;
 
   if (argc < 2) {
     usage(stderr, argc, argv);
@@ -224,24 +268,49 @@ int main(int argc, char* argv[]) {
     goto out;
   }
 
-  if (strcmp(argv[1], "disable-verity") == 0) {
-    ret = do_set_verity(ops, ab_suffix, false);
-  } else if (strcmp(argv[1], "enable-verity") == 0) {
-    ret = do_set_verity(ops, ab_suffix, true);
-  } else if (strcmp(argv[1], "get-verity") == 0) {
-    ret = do_get_verity(ops, ab_suffix);
-  } else if (strcmp(argv[1], "disable-verification") == 0) {
-    ret = do_set_verification(ops, ab_suffix, false);
-  } else if (strcmp(argv[1], "enable-verification") == 0) {
-    ret = do_set_verification(ops, ab_suffix, true);
-  } else if (strcmp(argv[1], "get-verification") == 0) {
-    ret = do_get_verification(ops, ab_suffix);
-  } else {
-    usage(stderr, argc, argv);
-    ret = EX_USAGE;
+  for (int n = 1; n < argc; n++) {
+    if (strcmp(argv[n], "--force") == 0) {
+      g_opt_force = true;
+    } else if (strcmp(argv[n], "disable-verity") == 0) {
+      cmd = Command::kDisableVerity;
+    } else if (strcmp(argv[n], "enable-verity") == 0) {
+      cmd = Command::kEnableVerity;
+    } else if (strcmp(argv[n], "get-verity") == 0) {
+      cmd = Command::kGetVerity;
+    } else if (strcmp(argv[n], "disable-verification") == 0) {
+      cmd = Command::kDisableVerification;
+    } else if (strcmp(argv[n], "enable-verification") == 0) {
+      cmd = Command::kEnableVerification;
+    } else if (strcmp(argv[n], "get-verification") == 0) {
+      cmd = Command::kGetVerification;
+    }
   }
 
-  ret = EX_OK;
+  switch (cmd) {
+    case Command::kNone:
+      usage(stderr, argc, argv);
+      ret = EX_USAGE;
+      break;
+    case Command::kDisableVerity:
+      ret = do_set_verity(ops, ab_suffix, false);
+      break;
+    case Command::kEnableVerity:
+      ret = do_set_verity(ops, ab_suffix, true);
+      break;
+    case Command::kGetVerity:
+      ret = do_get_verity(ops, ab_suffix);
+      break;
+    case Command::kDisableVerification:
+      ret = do_set_verification(ops, ab_suffix, false);
+      break;
+    case Command::kEnableVerification:
+      ret = do_set_verification(ops, ab_suffix, true);
+      break;
+    case Command::kGetVerification:
+      ret = do_get_verification(ops, ab_suffix);
+      break;
+  }
+
 out:
   if (ops != nullptr) {
     avb_ops_user_free(ops);
