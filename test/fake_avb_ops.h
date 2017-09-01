@@ -84,6 +84,9 @@ class FakeAvbOpsDelegate {
 
   virtual AvbIOResult read_permanent_attributes_hash(
       uint8_t hash[AVB_SHA256_DIGEST_SIZE]) = 0;
+
+  virtual void set_key_version(size_t rollback_index_location,
+                               uint64_t key_version) = 0;
 };
 
 // Provides fake implementations of AVB ops. All instances of this class must be
@@ -141,6 +144,10 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
 
   std::map<size_t, uint64_t> get_stored_rollback_indexes() {
     return stored_rollback_indexes_;
+  }
+
+  std::map<size_t, uint64_t> get_verified_rollback_indexes() {
+    return verified_rollback_indexes_;
   }
 
   void set_stored_is_device_unlocked(bool stored_is_device_unlocked) {
@@ -204,6 +211,9 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
   AvbIOResult read_permanent_attributes_hash(
       uint8_t hash[AVB_SHA256_DIGEST_SIZE]) override;
 
+  void set_key_version(size_t rollback_index_location,
+                       uint64_t key_version) override;
+
  private:
   AvbOps avb_ops_;
   AvbABOps avb_ab_ops_;
@@ -217,6 +227,7 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
   std::string expected_public_key_metadata_;
 
   std::map<size_t, uint64_t> stored_rollback_indexes_;
+  std::map<size_t, uint64_t> verified_rollback_indexes_;
 
   bool stored_is_device_unlocked_;
 

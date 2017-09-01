@@ -179,6 +179,11 @@ class AvbAtxValidateTest : public ::testing::Test, public FakeAvbOpsDelegate {
     return ops_.read_permanent_attributes_hash(hash);
   }
 
+  void set_key_version(size_t rollback_index_location,
+                       uint64_t key_version) override {
+    ops_.set_key_version(rollback_index_location, key_version);
+  }
+
  protected:
   virtual AvbIOResult Validate(bool* is_trusted) {
     return avb_atx_validate_vbmeta_public_key(
@@ -236,6 +241,14 @@ TEST_F(AvbAtxValidateTest, Success) {
   bool is_trusted = false;
   EXPECT_EQ(AVB_IO_RESULT_OK, Validate(&is_trusted));
   EXPECT_TRUE(is_trusted);
+
+  // Check that the key versions were reported correctly.
+  EXPECT_EQ(
+      ops_.get_verified_rollback_indexes()[AVB_ATX_PIK_VERSION_LOCATION],
+      metadata_.product_intermediate_key_certificate.signed_data.key_version);
+  EXPECT_EQ(ops_.get_verified_rollback_indexes()[AVB_ATX_PSK_VERSION_LOCATION],
+            metadata_.product_signing_key_certificate.signed_data.key_version);
+  EXPECT_EQ(2UL, ops_.get_verified_rollback_indexes().size());
 }
 
 TEST_F(AvbAtxValidateTest, SuccessAfterNewSign) {
@@ -625,6 +638,11 @@ class AvbAtxSlotVerifyTest : public BaseAvbToolTest, public FakeAvbOpsDelegate {
   AvbIOResult read_permanent_attributes_hash(
       uint8_t hash[AVB_SHA256_DIGEST_SIZE]) override {
     return ops_.read_permanent_attributes_hash(hash);
+  }
+
+  void set_key_version(size_t rollback_index_location,
+                       uint64_t key_version) override {
+    return ops_.set_key_version(rollback_index_location, key_version);
   }
 
  protected:

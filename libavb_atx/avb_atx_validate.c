@@ -241,6 +241,16 @@ AvbIOResult avb_atx_validate_vbmeta_public_key(
     return AVB_IO_RESULT_OK;
   }
 
+  /* Report the key versions used during verification. */
+  ops->atx_ops->set_key_version(
+      ops->atx_ops,
+      AVB_ATX_PIK_VERSION_LOCATION,
+      metadata.product_intermediate_key_certificate.signed_data.key_version);
+  ops->atx_ops->set_key_version(
+      ops->atx_ops,
+      AVB_ATX_PSK_VERSION_LOCATION,
+      metadata.product_signing_key_certificate.signed_data.key_version);
+
   *out_is_trusted = true;
   return AVB_IO_RESULT_OK;
 }

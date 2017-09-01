@@ -264,6 +264,11 @@ AvbIOResult FakeAvbOps::read_permanent_attributes_hash(
   return AVB_IO_RESULT_OK;
 }
 
+void FakeAvbOps::set_key_version(size_t rollback_index_location,
+                                 uint64_t key_version) {
+  verified_rollback_indexes_[rollback_index_location] = key_version;
+}
+
 static AvbIOResult my_ops_read_from_partition(AvbOps* ops,
                                               const char* partition,
                                               int64_t offset,
@@ -355,6 +360,14 @@ static AvbIOResult my_ops_read_permanent_attributes_hash(
       ->read_permanent_attributes_hash(hash);
 }
 
+static void my_ops_set_key_version(AvbAtxOps* atx_ops,
+                                   size_t rollback_index_location,
+                                   uint64_t key_version) {
+  return FakeAvbOps::GetInstanceFromAvbOps(atx_ops->ops)
+      ->delegate()
+      ->set_key_version(rollback_index_location, key_version);
+}
+
 FakeAvbOps::FakeAvbOps() {
   avb_ops_.ab_ops = &avb_ab_ops_;
   avb_ops_.atx_ops = &avb_atx_ops_;
@@ -377,6 +390,7 @@ FakeAvbOps::FakeAvbOps() {
   avb_atx_ops_.read_permanent_attributes = my_ops_read_permanent_attributes;
   avb_atx_ops_.read_permanent_attributes_hash =
       my_ops_read_permanent_attributes_hash;
+  avb_atx_ops_.set_key_version = my_ops_set_key_version;
 
   delegate_ = this;
 }
