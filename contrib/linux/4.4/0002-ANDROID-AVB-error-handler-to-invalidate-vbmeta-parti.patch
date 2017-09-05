@@ -1,0 +1,343 @@
+From fabdd30b4cf9ee341dabbbd51b2a1e3335d7d4cd Mon Sep 17 00:00:00 2001
+From: David Zeuthen <zeuthen@google.com>
+Date: Tue, 24 Jan 2017 13:17:01 -0500
+Subject: [PATCH 2/2] ANDROID: AVB error handler to invalidate vbmeta
+ partition.
+
+If androidboot.vbmeta.device is set and points to a device with vbmeta
+magic, this header will be overwritten upon an irrecoverable dm-verity
+error. The side-effect of this is that the slot will fail to verify on
+next reboot, effectively triggering the boot loader to fallback to
+another slot. This work both if the vbmeta struct is at the start of a
+partition or if there's an AVB footer at the end.
+
+This code is based on drivers/md/dm-verity-chromeos.c from ChromiumOS.
+
+Example:
+
+ [    0.000000] Kernel command line: rootfstype=ext4 init=/init console=ttyS0,115200 androidboot.console=ttyS0 androidboot.hardware=uefi_x86_64 enforcing=0 androidboot.selinux=permissive androidboot.debuggable=1 buildvariant=eng dm="1 vroot none ro 1,0 2080496 verity 1 PARTUUID=6779df46-78f6-4c69-bf53-59bb1fbf126b PARTUUID=6779df46-78f6-4c69-bf53-59bb1fbf126b 4096 4096 260062 260062 sha1 4f76354c86e430e27426d584a726f2fbffecae32 7e4085342d634065269631ac9a199e1a43f4632c 1 ignore_zero_blocks" root=0xfd00 androidboot.vbmeta.device=PARTUUID=b865935d-38fb-4c4e-b8b4-70dc67321552 androidboot.slot_suffix=_a androidboot.vbmeta.device_state=unlocked androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=3200 androidboot.vbmeta.digest=14fe41c2b3696c31b7ad5eae7877d7d188995e1ab122c604aaaf4785850b91f7 skip_initramfs
+ [...]
+ [    0.612802] device-mapper: verity-avb: AVB error handler initialized with vbmeta device: PARTUUID=b865935d-38fb-4c4e-b8b4-70dc67321552
+ [...]
+ [    1.213804] device-mapper: init: attempting early device configuration.
+ [    1.214752] device-mapper: init: adding target '0 2080496 verity 1 PARTUUID=6779df46-78f6-4c69-bf53-59bb1fbf126b PARTUUID=6779df46-78f6-4c69-bf53-59bb1fbf126b 4096 4096 260062 260062 sha1 4f76354c86e430e27426d584a726f2fbffecae32 7e4085342d634065269631ac9a199e1a43f4632c 1 ignore_zero_blocks'
+ [    1.217643] device-mapper: init: dm-0 is ready
+ [    1.226694] device-mapper: verity: 8:6: data block 0 is corrupted
+ [    1.227666] device-mapper: verity-avb: AVB error handler called for PARTUUID=b865935d-38fb-4c4e-b8b4-70dc67321552
+ [    1.234308] device-mapper: verity-avb: invalidate_vbmeta: found vbmeta partition
+ [    1.235848] device-mapper: verity-avb: invalidate_vbmeta: completed.
+ [...]
+
+Bug: 31622239
+Test: Manually tested (other arch).
+Change-Id: Idf6be32d6a3d28e15de9302aa26ad6a516d663aa
+Signed-off-by: David Zeuthen <zeuthen@google.com>
+---
+ drivers/md/Kconfig            |  11 ++
+ drivers/md/Makefile           |   4 +
+ drivers/md/dm-verity-avb.c    | 229 ++++++++++++++++++++++++++++++++++++++++++
+ drivers/md/dm-verity-target.c |   6 +-
+ drivers/md/dm-verity.h        |   1 +
+ 5 files changed, 250 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/md/dm-verity-avb.c
+
+diff --git a/drivers/md/Kconfig b/drivers/md/Kconfig
+index 9eb08a43cd27..6f2fde5d98e7 100644
+--- a/drivers/md/Kconfig
++++ b/drivers/md/Kconfig
+@@ -515,6 +515,17 @@ config DM_LOG_WRITES
+ 
+ 	  If unsure, say N.
+ 
++config DM_VERITY_AVB
++	tristate "Support AVB specific verity error behavior"
++	depends on DM_VERITY
++	---help---
++	  Enables Android Verified Boot platform-specific error
++	  behavior. In particular, it will modify the vbmeta partition
++	  specified on the kernel command-line when non-transient error
++	  occurs (followed by a panic).
++
++	  If unsure, say N.
++
+ config DM_ANDROID_VERITY
+ 	bool "Android verity target support"
+ 	depends on DM_VERITY=y
+diff --git a/drivers/md/Makefile b/drivers/md/Makefile
+index 32b5d0a90d60..c22cc74c9fa8 100644
+--- a/drivers/md/Makefile
++++ b/drivers/md/Makefile
+@@ -69,3 +69,7 @@ endif
+ ifeq ($(CONFIG_DM_VERITY_FEC),y)
+ dm-verity-objs			+= dm-verity-fec.o
+ endif
++
++ifeq ($(CONFIG_DM_VERITY_AVB),y)
++dm-verity-objs			+= dm-verity-avb.o
++endif
+diff --git a/drivers/md/dm-verity-avb.c b/drivers/md/dm-verity-avb.c
+new file mode 100644
+index 000000000000..727aacbb1480
+--- /dev/null
++++ b/drivers/md/dm-verity-avb.c
+@@ -0,0 +1,229 @@
++/*
++ * Copyright (C) 2017 Google.
++ *
++ * This file is released under the GPLv2.
++ *
++ * Based on drivers/md/dm-verity-chromeos.c
++ */
++
++#include <linux/device-mapper.h>
++#include <linux/module.h>
++#include <linux/mount.h>
++
++#define DM_MSG_PREFIX "verity-avb"
++
++/* Set via module parameters. */
++static char avb_vbmeta_device[64];
++static char avb_invalidate_on_error[4];
++
++static void invalidate_vbmeta_endio(struct bio *bio)
++{
++	if (bio->bi_error)
++		DMERR("invalidate_vbmeta_endio: error %d", bio->bi_error);
++	complete(bio->bi_private);
++}
++
++static int invalidate_vbmeta_submit(struct bio *bio,
++				    struct block_device *bdev,
++				    int rw, int access_last_sector,
++				    struct page *page)
++{
++	DECLARE_COMPLETION_ONSTACK(wait);
++
++	bio->bi_private = &wait;
++	bio->bi_end_io = invalidate_vbmeta_endio;
++	bio->bi_bdev = bdev;
++	bio->bi_rw = rw;
++
++	bio->bi_iter.bi_sector = 0;
++	if (access_last_sector) {
++		sector_t last_sector;
++
++		last_sector = (i_size_read(bdev->bd_inode)>>SECTOR_SHIFT) - 1;
++		bio->bi_iter.bi_sector = last_sector;
++	}
++	if (!bio_add_page(bio, page, PAGE_SIZE, 0)) {
++		DMERR("invalidate_vbmeta_submit: bio_add_page error");
++		return -EIO;
++	}
++
++	submit_bio(rw, bio);
++	/* Wait up to 2 seconds for completion or fail. */
++	if (!wait_for_completion_timeout(&wait, msecs_to_jiffies(2000)))
++		return -EIO;
++	return 0;
++}
++
++static int invalidate_vbmeta(dev_t vbmeta_devt)
++{
++	int ret = 0;
++	struct block_device *bdev;
++	struct bio *bio;
++	struct page *page;
++	fmode_t dev_mode;
++	/* Ensure we do synchronous unblocked I/O. We may also need
++	 * sync_bdev() on completion, but it really shouldn't.
++	 */
++	int rw = REQ_SYNC | REQ_SOFTBARRIER | REQ_NOIDLE;
++	int access_last_sector = 0;
++
++	DMINFO("invalidate_vbmeta: acting on device %d:%d",
++	       MAJOR(vbmeta_devt), MINOR(vbmeta_devt));
++
++	/* First we open the device for reading. */
++	dev_mode = FMODE_READ | FMODE_EXCL;
++	bdev = blkdev_get_by_dev(vbmeta_devt, dev_mode,
++				 invalidate_vbmeta);
++	if (IS_ERR(bdev)) {
++		DMERR("invalidate_kernel: could not open device for reading");
++		dev_mode = 0;
++		ret = -ENOENT;
++		goto failed_to_read;
++	}
++
++	bio = bio_alloc(GFP_NOIO, 1);
++	if (!bio) {
++		ret = -ENOMEM;
++		goto failed_bio_alloc;
++	}
++
++	page = alloc_page(GFP_NOIO);
++	if (!page) {
++		ret = -ENOMEM;
++		goto failed_to_alloc_page;
++	}
++
++	access_last_sector = 0;
++	ret = invalidate_vbmeta_submit(bio, bdev, rw, access_last_sector, page);
++	if (ret) {
++		DMERR("invalidate_vbmeta: error reading");
++		goto failed_to_submit_read;
++	}
++
++	/* We have a page. Let's make sure it looks right. */
++	if (memcmp("AVB0", page_address(page), 4) == 0) {
++		/* Stamp it. */
++		memcpy(page_address(page), "AVE0", 4);
++		DMINFO("invalidate_vbmeta: found vbmeta partition");
++	} else {
++		/* Could be this is on a AVB footer, check. Also, since the
++		 * AVB footer is in the last 64 bytes, adjust for the fact that
++		 * we're dealing with 512-byte sectors.
++		 */
++		size_t offset = (1<<SECTOR_SHIFT) - 64;
++
++		access_last_sector = 1;
++		ret = invalidate_vbmeta_submit(bio, bdev, rw,
++					       access_last_sector, page);
++		if (ret) {
++			DMERR("invalidate_vbmeta: error reading");
++			goto failed_to_submit_read;
++		}
++		if (memcmp("AVBf", page_address(page) + offset, 4) != 0) {
++			DMERR("invalidate_vbmeta on non-vbmeta partition");
++			ret = -EINVAL;
++			goto invalid_header;
++		}
++		/* Stamp it. */
++		memcpy(page_address(page) + offset, "AVE0", 4);
++		DMINFO("invalidate_vbmeta: found vbmeta footer partition");
++	}
++
++	/* Now rewrite the changed page - the block dev was being
++	 * changed on read. Let's reopen here.
++	 */
++	blkdev_put(bdev, dev_mode);
++	dev_mode = FMODE_WRITE | FMODE_EXCL;
++	bdev = blkdev_get_by_dev(vbmeta_devt, dev_mode,
++				 invalidate_vbmeta);
++	if (IS_ERR(bdev)) {
++		DMERR("invalidate_vbmeta: could not open device for writing");
++		dev_mode = 0;
++		ret = -ENOENT;
++		goto failed_to_write;
++	}
++
++	/* We re-use the same bio to do the write after the read. Need to reset
++	 * it to initialize bio->bi_remaining.
++	 */
++	bio_reset(bio);
++
++	rw |= REQ_WRITE;
++	ret = invalidate_vbmeta_submit(bio, bdev, rw, access_last_sector, page);
++	if (ret) {
++		DMERR("invalidate_vbmeta: error writing");
++		goto failed_to_submit_write;
++	}
++
++	DMERR("invalidate_vbmeta: completed.");
++	ret = 0;
++failed_to_submit_write:
++failed_to_write:
++invalid_header:
++	__free_page(page);
++failed_to_submit_read:
++	/* Technically, we'll leak a page with the pending bio, but
++	 * we're about to reboot anyway.
++	 */
++failed_to_alloc_page:
++	bio_put(bio);
++failed_bio_alloc:
++	if (dev_mode)
++		blkdev_put(bdev, dev_mode);
++failed_to_read:
++	return ret;
++}
++
++void dm_verity_avb_error_handler(void)
++{
++	dev_t dev;
++
++	DMINFO("AVB error handler called for %s", avb_vbmeta_device);
++
++	if (strcmp(avb_invalidate_on_error, "yes") != 0) {
++		DMINFO("Not configured to invalidate");
++		return;
++	}
++
++	if (avb_vbmeta_device[0] == '\0') {
++		DMERR("avb_vbmeta_device parameter not set");
++		goto fail_no_dev;
++	}
++
++	dev = name_to_dev_t(avb_vbmeta_device);
++	if (!dev) {
++		DMERR("No matching partition for device: %s",
++		      avb_vbmeta_device);
++		goto fail_no_dev;
++	}
++
++	invalidate_vbmeta(dev);
++
++fail_no_dev:
++	;
++}
++
++static int __init dm_verity_avb_init(void)
++{
++	DMINFO("AVB error handler initialized with vbmeta device: %s",
++	       avb_vbmeta_device);
++	return 0;
++}
++
++static void __exit dm_verity_avb_exit(void)
++{
++}
++
++module_init(dm_verity_avb_init);
++module_exit(dm_verity_avb_exit);
++
++MODULE_AUTHOR("David Zeuthen <zeuthen@google.com>");
++MODULE_DESCRIPTION("AVB-specific error handler for dm-verity");
++MODULE_LICENSE("GPL");
++
++/* Declare parameter with no module prefix */
++#undef MODULE_PARAM_PREFIX
++#define MODULE_PARAM_PREFIX	"androidboot.vbmeta."
++module_param_string(device, avb_vbmeta_device, sizeof(avb_vbmeta_device), 0);
++module_param_string(invalidate_on_error, avb_invalidate_on_error,
++		    sizeof(avb_invalidate_on_error), 0);
+diff --git a/drivers/md/dm-verity-target.c b/drivers/md/dm-verity-target.c
+index c7e97cf6e7fb..e34cf53bd068 100644
+--- a/drivers/md/dm-verity-target.c
++++ b/drivers/md/dm-verity-target.c
+@@ -233,8 +233,12 @@ out:
+ 	if (v->mode == DM_VERITY_MODE_LOGGING)
+ 		return 0;
+ 
+-	if (v->mode == DM_VERITY_MODE_RESTART)
++	if (v->mode == DM_VERITY_MODE_RESTART) {
++#ifdef CONFIG_DM_VERITY_AVB
++		dm_verity_avb_error_handler();
++#endif
+ 		kernel_restart("dm-verity device corrupted");
++	}
+ 
+ 	return 1;
+ }
+diff --git a/drivers/md/dm-verity.h b/drivers/md/dm-verity.h
+index 75effca400a3..a90d1d416107 100644
+--- a/drivers/md/dm-verity.h
++++ b/drivers/md/dm-verity.h
+@@ -136,4 +136,5 @@ extern void verity_io_hints(struct dm_target *ti, struct queue_limits *limits);
+ extern void verity_dtr(struct dm_target *ti);
+ extern int verity_ctr(struct dm_target *ti, unsigned argc, char **argv);
+ extern int verity_map(struct dm_target *ti, struct bio *bio);
++extern void dm_verity_avb_error_handler(void);
+ #endif /* DM_VERITY_H */
+-- 
+2.14.1.581.gf28d330327-goog
+
