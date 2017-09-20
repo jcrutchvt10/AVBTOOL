@@ -25,7 +25,7 @@
 #ifndef LIBAVB_USER_H_
 #define LIBAVB_USER_H_
 
-#include <libavb_ab/libavb_ab.h>
+#include <libavb/libavb.h>
 
 /* The AVB_INSIDE_LIBAVB_USER_H preprocessor symbol is used to enforce
  * library users to include only this file. All public interfaces, and

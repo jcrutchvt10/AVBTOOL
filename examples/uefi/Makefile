@@ -62,7 +62,9 @@ EFI_TARGET      = avb_bootloader.efi
 EFI_SHARED_OBJ  = $(patsubst %.efi,%.so,$(EFI_TARGET))
 
 EFI_CFLAGS = \
-    -DAVB_COMPILATION -DAVB_ENABLE_DEBUG -std=gnu99 \
+    -DAVB_COMPILATION -DAVB_ENABLE_DEBUG \
+    -DAVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED \
+    -std=gnu99 \
 	-I$(ANDROID_BUILD_TOP)/system/core/mkbootimg/ \
     -I$(AVB) \
     -I$(GNUEFI) \

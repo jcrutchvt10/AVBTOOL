@@ -29,6 +29,7 @@
 #include <hardware/boot_control.h>
 #include <hardware/hardware.h>
 
+#include <libavb_ab/libavb_ab.h>
 #include <libavb_user/libavb_user.h>
 
 static AvbOps* ops = NULL;

@@ -110,6 +110,9 @@ cc_library_static {
     export_include_dirs: ["."],
     shared_libs: ["libbase"],
     static_libs: ["libfs_mgr"],
+    cflags: [
+        "-DAVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED",
+    ],
     srcs: [
         "libavb/avb_sysdeps_posix.c",
         "libavb_ab/avb_ab_flow.c",
@@ -136,6 +139,7 @@ cc_library_host_static {
     export_include_dirs: ["."],
     cflags: [
         "-fno-stack-protector",
+        "-DAVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED",
     ],
     srcs: ["libavb_ab/avb_ab_flow.c"],
 }
@@ -178,6 +182,7 @@ cc_test_host {
     ],
     cflags: [
             "-Wno-missing-prototypes",
+            "-DAVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED",
     ],
     srcs: [
         "test/avb_ab_flow_unittest.cc",
@@ -196,6 +201,9 @@ cc_test_host {
 cc_library_host_static {
     name: "libavb_host_user_code_test",
     defaults: ["avb_defaults"],
+    cflags: [
+        "-DAVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED",
+    ],
     srcs: ["test/user_code_test.cc"],
 }
 
@@ -210,6 +218,9 @@ cc_library {
     shared_libs: [
         "libbase",
         "libcutils",
+    ],
+    cflags: [
+        "-DAVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED",
     ],
     srcs: ["boot_control/boot_control_avb.c"],
 }

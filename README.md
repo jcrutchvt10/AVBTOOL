@@ -174,17 +174,21 @@ validation operation (see `avb_validate_vbmeta_public_key()` in
       expected to be provided by the platform is defined in
       `avb_sysdeps.h`. If the platform provides the standard C runtime
       `avb_sysdeps_posix.c` can be used.
-* `libavb_ab/`
-    + An experimental A/B implementation for use in boot loaders
-      and AVB examples.
 * `libavb_atx/`
     + An Android Things Extension for validating public key metadata.
 * `libavb_user/`
     + Contains an `AvbOps` implementation suitable for use in Android
       userspace. This is used in `boot_control.avb` and `avbctl`.
+* `libavb_ab/`
+    + An experimental A/B implementation for use in boot loaders and
+      AVB examples. **NOTE**: This code is *DEPRECATED* and you must
+      define `AVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED` to use
+      it. The code will be removed Jun 1 2018.
 * `boot_control/`
     + An implementation of the Android `boot_control` HAL for use with
       boot loaders using the experimental `libavb_ab` A/B stack.
+      **NOTE**: This code is *DEPRECATED* and will be removed Jun 1
+      2018.
 * `contrib/`
     + Contains patches needed in other projects for interoperability with AVB.
       For example, `contrib/linux/4.4` has the patches for Linux kernel 4.4,
@@ -697,9 +701,9 @@ if (is_slot_is_marked_as_successful(slot->ab_suffix)) {
 For an HLOS where it's possible to roll back to a previous version,
 `stored_rollback_index[n]` should be set to the largest possible value
 allowing all bootable slots to boot. This approach is implemented in
-AVB's experimental A/B stack `libavb_ab`, see the `avb_ab_flow()`
-implementation. Note that this requires verifying *all* bootable slots
-at every boot and this may impact boot time.
+AVB's experimental (and now deprecated) A/B stack `libavb_ab`, see the
+`avb_ab_flow()` implementation. Note that this requires verifying
+*all* bootable slots at every boot and this may impact boot time.
 
 ## Recommended Bootflow
 
