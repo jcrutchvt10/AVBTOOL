@@ -22,6 +22,7 @@
  * SOFTWARE.
  */
 
+#include <endian.h>
 #include <string.h>
 
 #include <gtest/gtest.h>
