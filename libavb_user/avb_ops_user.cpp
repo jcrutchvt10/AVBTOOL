@@ -97,7 +97,7 @@ static int open_partition(const char* name, int flags) {
     }
     trimmed_len = end_slash - record->blk_device + 1;
     name_len = strlen(name);
-    path = calloc(trimmed_len + name_len + 1, 1);
+    path = static_cast<char*>(calloc(trimmed_len + name_len + 1, 1));
     strncpy(path, record->blk_device, trimmed_len);
     strncpy(path + trimmed_len, name, name_len);
   }
@@ -302,13 +302,13 @@ static AvbIOResult get_unique_guid_for_partition(AvbOps* ops,
 AvbOps* avb_ops_user_new(void) {
   AvbOps* ops;
 
-  ops = calloc(1, sizeof(AvbOps));
+  ops = static_cast<AvbOps*>(calloc(1, sizeof(AvbOps)));
   if (ops == NULL) {
     avb_error("Error allocating memory for AvbOps.\n");
     goto out;
   }
 
-  ops->ab_ops = calloc(1, sizeof(AvbABOps));
+  ops->ab_ops = static_cast<AvbABOps*>(calloc(1, sizeof(AvbABOps)));
   if (ops->ab_ops == NULL) {
     avb_error("Error allocating memory for AvbABOps.\n");
     free(ops);
