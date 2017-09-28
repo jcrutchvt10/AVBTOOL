@@ -195,7 +195,6 @@ cc_test_host {
         "test/fake_avb_ops.cc",
         "test/avb_sysdeps_posix_testing.cc",
     ],
-    host_ldlibs: ["-lrt"],
 }
 
 cc_library_host_static {
