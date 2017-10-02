@@ -92,7 +92,7 @@ cc_library_static {
         android: {
             srcs: ["libavb/avb_sysdeps_posix.c"],
         },
-        linux: {
+        linux_glibc: {
             cflags: ["-fno-stack-protector"],
         },
     },
